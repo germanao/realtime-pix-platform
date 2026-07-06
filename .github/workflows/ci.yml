@@ -1,0 +1,111 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend build and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore RealtimePixPlatform.slnx
+      - name: Build
+        run: dotnet build RealtimePixPlatform.slnx --configuration Release --no-restore
+      - name: Test
+        run: dotnet test RealtimePixPlatform.slnx --configuration Release --no-build --logger trx
+
+  frontend:
+    name: Frontend build and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm test -- --run
+      - run: npm run build
+
+  terraform:
+    name: Terraform format and validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11.4
+      - name: Format check
+        run: terraform fmt -check -recursive infra/terraform
+      - name: Validate bootstrap
+        working-directory: infra/terraform/bootstrap
+        run: |
+          terraform init -backend=false
+          terraform validate
+      - name: Validate foundation
+        working-directory: infra/terraform/foundation
+        run: |
+          terraform init -backend=false
+          terraform validate
+      - name: Validate runtime
+        working-directory: infra/terraform/runtime
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  dockerfiles:
+    name: Dockerfile checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify expected service Dockerfiles
+        shell: bash
+        run: |
+          for file in \
+            services/api-gateway/Dockerfile \
+            services/identity-presence-service/Dockerfile \
+            services/wallet-ledger-service/Dockerfile \
+            services/transaction-service/Dockerfile \
+            services/realtime-events-service/Dockerfile \
+            services/bot-service/Dockerfile
+          do
+            test -f "$file"
+          done
+
+  public-repo-hygiene:
+    name: Public repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block generated runtime artifacts
+        shell: bash
+        run: |
+          tracked="$(git ls-files | grep -E '(^|/)(work/local-bus|test-results|playwright-report|outputs/|\.env|terraform\.tfstate|\.tfvars|\.terraform/)' || true)"
+          if [ -n "$tracked" ]; then
+            echo "Generated or sensitive local files are tracked:"
+            echo "$tracked"
+            exit 1
+          fi
+      - name: Block obvious secret patterns
+        shell: bash
+        run: |
+          matches="$(git grep -n -I -E '([g]hp_|[g]ithub_pat_|[A]KIA|[A]Iza|[A]ccountKey=|[S]haredAccessKey=|[D]efaultEndpointsProtocol=|-----[B]EGIN (RSA |EC |OPENSSH |PRIVATE)|[p]ostgres://|[P]assword=[^<\$\{]|[8]4221a3c|[f]1567d63|[k]v-realtime-pix-[0-9]+|[a]crpix[0-9]+)' -- . ':(exclude)apps/web/package-lock.json' || true)"
+          if [ -n "$matches" ]; then
+            echo "Potential secret or environment-specific value found:"
+            echo "$matches"
+            exit 1
+          fi

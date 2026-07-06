@@ -1,0 +1,149 @@
+name: deploy-poc
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_runtime:
+        description: "Apply runtime after building images"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      manage_vercel:
+        description: "Let Terraform manage Vercel project/env vars"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy POC
+    runs-on: ubuntu-latest
+    environment: poc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11.4
+
+      - name: Apply foundation
+        working-directory: infra/terraform/foundation
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=foundation-poc.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          terraform apply -auto-approve \
+            -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -var="publisher_email=${{ vars.PUBLISHER_EMAIL }}"
+
+      - name: Read foundation outputs
+        id: foundation
+        working-directory: infra/terraform/foundation
+        shell: bash
+        run: |
+          echo "acr_name=$(terraform output -raw acr_name)" >> "$GITHUB_OUTPUT"
+          echo "resource_group_name=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
+          echo "postgres_fqdn=$(terraform output -raw postgres_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "postgres_server_name=$(terraform output -raw postgres_server_name)" >> "$GITHUB_OUTPUT"
+          echo "postgres_admin_login=$(terraform output -raw postgres_admin_login)" >> "$GITHUB_OUTPUT"
+          echo "key_vault_name=$(terraform output -raw key_vault_name)" >> "$GITHUB_OUTPUT"
+          echo "servicebus_namespace_name=$(terraform output -raw servicebus_namespace_name)" >> "$GITHUB_OUTPUT"
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Temporarily allow runner IP to PostgreSQL
+        id: runner_ip
+        shell: bash
+        run: |
+          IP="$(curl -sS https://api.ipify.org)"
+          echo "ip=$IP" >> "$GITHUB_OUTPUT"
+          az postgres flexible-server firewall-rule create \
+            --resource-group "${{ steps.foundation.outputs.resource_group_name }}" \
+            --name "${{ steps.foundation.outputs.postgres_server_name }}" \
+            --rule-name "github-actions-${{ github.run_id }}" \
+            --start-ip-address "$IP" \
+            --end-ip-address "$IP"
+
+      - name: Bootstrap PostgreSQL roles, schemas, and connection secrets
+        shell: bash
+        env:
+          PGHOST: ${{ steps.foundation.outputs.postgres_fqdn }}
+          PGADMIN_USER: ${{ steps.foundation.outputs.postgres_admin_login }}
+          KEYVAULT_NAME: ${{ steps.foundation.outputs.key_vault_name }}
+        run: bash scripts/cloud/postgres-bootstrap-noninteractive.sh
+
+      - name: Remove Service Bus default rules
+        shell: bash
+        env:
+          RG: ${{ steps.foundation.outputs.resource_group_name }}
+          SERVICEBUS_NAMESPACE: ${{ steps.foundation.outputs.servicebus_namespace_name }}
+        run: bash scripts/cloud/remove-servicebus-default-rules.sh
+
+      - name: Build service images in ACR
+        shell: bash
+        run: |
+          ACR="${{ steps.foundation.outputs.acr_name }}"
+          TAG="${{ github.sha }}"
+          az acr build --registry "$ACR" --image "realtime-pix/api-gateway:$TAG" --file services/api-gateway/Dockerfile .
+          az acr build --registry "$ACR" --image "realtime-pix/identity-presence-service:$TAG" --file services/identity-presence-service/Dockerfile .
+          az acr build --registry "$ACR" --image "realtime-pix/wallet-ledger-service:$TAG" --file services/wallet-ledger-service/Dockerfile .
+          az acr build --registry "$ACR" --image "realtime-pix/transaction-service:$TAG" --file services/transaction-service/Dockerfile .
+          az acr build --registry "$ACR" --image "realtime-pix/realtime-events-service:$TAG" --file services/realtime-events-service/Dockerfile .
+          az acr build --registry "$ACR" --image "realtime-pix/bot-service:$TAG" --file services/bot-service/Dockerfile .
+
+      - name: Apply runtime
+        if: inputs.apply_runtime == 'true'
+        working-directory: infra/terraform/runtime
+        env:
+          VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=runtime-poc.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          terraform apply -auto-approve \
+            -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -var="image_tag=${{ github.sha }}" \
+            -var="manage_vercel=${{ inputs.manage_vercel }}" \
+            -var="vercel_api_token=${VERCEL_API_TOKEN}"
+
+      - name: Smoke test
+        if: inputs.apply_runtime == 'true'
+        working-directory: infra/terraform/runtime
+        shell: bash
+        run: |
+          API_URL="$(terraform output -raw api_base_url)"
+          curl --fail --retry 10 --retry-delay 10 "${API_URL}/health"
+
+      - name: Remove temporary PostgreSQL firewall rule
+        if: always() && steps.runner_ip.outputs.ip != ''
+        shell: bash
+        run: |
+          az postgres flexible-server firewall-rule delete \
+            --resource-group "${{ steps.foundation.outputs.resource_group_name }}" \
+            --name "${{ steps.foundation.outputs.postgres_server_name }}" \
+            --rule-name "github-actions-${{ github.run_id }}" \
+            --yes

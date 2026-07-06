@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\..\building-blocks\dotnet\RealtimePix.Eventing\RealtimePix.Eventing.csproj" />
+  </ItemGroup>
+</Project>
+

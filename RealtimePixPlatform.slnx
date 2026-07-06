@@ -1,0 +1,37 @@
+<Solution>
+  <Folder Name="/building-blocks/" />
+  <Folder Name="/building-blocks/dotnet/">
+    <Project Path="building-blocks/dotnet/RealtimePix.Eventing/RealtimePix.Eventing.csproj" />
+  </Folder>
+  <Folder Name="/contracts/" />
+  <Folder Name="/contracts/dotnet/">
+    <Project Path="contracts/dotnet/RealtimePix.Contracts/RealtimePix.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/services/" />
+  <Folder Name="/services/api-gateway/">
+    <Project Path="services/api-gateway/ApiGateway.csproj" />
+  </Folder>
+  <Folder Name="/services/bot-service/">
+    <Project Path="services/bot-service/BotService.csproj" />
+  </Folder>
+  <Folder Name="/services/identity-presence-service/">
+    <Project Path="services/identity-presence-service/IdentityPresenceService.csproj" />
+  </Folder>
+  <Folder Name="/services/realtime-events-service/">
+    <Project Path="services/realtime-events-service/RealtimeEventsService.csproj" />
+  </Folder>
+  <Folder Name="/services/transaction-service/">
+    <Project Path="services/transaction-service/TransactionService.csproj" />
+  </Folder>
+  <Folder Name="/services/wallet-ledger-service/">
+    <Project Path="services/wallet-ledger-service/WalletLedgerService.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Eventing.Tests/Eventing.Tests.csproj" />
+    <Project Path="tests/IdentityPresenceService.Tests/IdentityPresenceService.Tests.csproj" />
+    <Project Path="tests/RealtimePix.ArchitectureChecks/RealtimePix.ArchitectureChecks.csproj" />
+    <Project Path="tests/RealtimeEventsService.Tests/RealtimeEventsService.Tests.csproj" />
+    <Project Path="tests/TransactionService.Tests/TransactionService.Tests.csproj" />
+    <Project Path="tests/WalletLedgerService.Tests/WalletLedgerService.Tests.csproj" />
+  </Folder>
+</Solution>

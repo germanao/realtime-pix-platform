@@ -1,0 +1,48 @@
+name: realtime-pix-platform
+
+services:
+  postgres-identity:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: identity_app
+      POSTGRES_PASSWORD: identity_dev_password
+      POSTGRES_DB: identity_presence_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - identity-postgres:/var/lib/postgresql/data
+
+  postgres-wallet:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wallet_app
+      POSTGRES_PASSWORD: wallet_dev_password
+      POSTGRES_DB: wallet_ledger_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - wallet-postgres:/var/lib/postgresql/data
+
+  postgres-transaction:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: transaction_app
+      POSTGRES_PASSWORD: transaction_dev_password
+      POSTGRES_DB: transaction_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - transaction-postgres:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    profiles: ["broker"]
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+volumes:
+  identity-postgres:
+  wallet-postgres:
+  transaction-postgres:
+

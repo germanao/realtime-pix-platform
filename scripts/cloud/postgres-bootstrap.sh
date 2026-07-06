@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Creates application roles, grants schema/database permissions, and writes
+# connection strings to Key Vault without printing secret values.
+
+: "${PGHOST:?Set PGHOST to the PostgreSQL Flexible Server FQDN.}"
+: "${PGADMIN_USER:=pixadmin}"
+: "${KEYVAULT_NAME:?Set KEYVAULT_NAME to the Azure Key Vault name.}"
+
+read -s -p "Postgres admin password for ${PGADMIN_USER}: " PGADMIN_PASSWORD
+echo
+read -s -p "Password for identity_app: " IDENTITY_PASSWORD
+echo
+read -s -p "Password for wallet_app: " WALLET_PASSWORD
+echo
+read -s -p "Password for transaction_app: " TRANSACTION_PASSWORD
+echo
+read -s -p "Password for realtime_app: " REALTIME_PASSWORD
+echo
+
+tmp_sql="$(mktemp)"
+cat > "${tmp_sql}" <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'identity_app') THEN
+    CREATE ROLE identity_app LOGIN PASSWORD '${IDENTITY_PASSWORD}';
+  ELSE
+    ALTER ROLE identity_app WITH LOGIN PASSWORD '${IDENTITY_PASSWORD}';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'wallet_app') THEN
+    CREATE ROLE wallet_app LOGIN PASSWORD '${WALLET_PASSWORD}';
+  ELSE
+    ALTER ROLE wallet_app WITH LOGIN PASSWORD '${WALLET_PASSWORD}';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'transaction_app') THEN
+    CREATE ROLE transaction_app LOGIN PASSWORD '${TRANSACTION_PASSWORD}';
+  ELSE
+    ALTER ROLE transaction_app WITH LOGIN PASSWORD '${TRANSACTION_PASSWORD}';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'realtime_app') THEN
+    CREATE ROLE realtime_app LOGIN PASSWORD '${REALTIME_PASSWORD}';
+  ELSE
+    ALTER ROLE realtime_app WITH LOGIN PASSWORD '${REALTIME_PASSWORD}';
+  END IF;
+END
+\$\$;
+
+ALTER DATABASE identity_presence_db OWNER TO identity_app;
+ALTER DATABASE wallet_ledger_db OWNER TO wallet_app;
+ALTER DATABASE transaction_db OWNER TO transaction_app;
+ALTER DATABASE realtime_projection_db OWNER TO realtime_app;
+
+REVOKE CONNECT ON DATABASE identity_presence_db FROM PUBLIC;
+REVOKE CONNECT ON DATABASE wallet_ledger_db FROM PUBLIC;
+REVOKE CONNECT ON DATABASE transaction_db FROM PUBLIC;
+REVOKE CONNECT ON DATABASE realtime_projection_db FROM PUBLIC;
+
+GRANT CONNECT ON DATABASE identity_presence_db TO identity_app, azure_pg_admin;
+GRANT CONNECT ON DATABASE wallet_ledger_db TO wallet_app, azure_pg_admin;
+GRANT CONNECT ON DATABASE transaction_db TO transaction_app, azure_pg_admin;
+GRANT CONNECT ON DATABASE realtime_projection_db TO realtime_app, azure_pg_admin;
+SQL
+
+PGPASSWORD="${PGADMIN_PASSWORD}" psql "host=${PGHOST} port=5432 dbname=postgres user=${PGADMIN_USER} sslmode=require" -v ON_ERROR_STOP=1 -f "${tmp_sql}"
+rm -f "${tmp_sql}"
+
+grant_schema() {
+  local db_user="$1"
+  local db_name="$2"
+  local password="$3"
+
+  PGPASSWORD="${PGADMIN_PASSWORD}" psql "host=${PGHOST} port=5432 dbname=${db_name} user=${PGADMIN_USER} sslmode=require" -v ON_ERROR_STOP=1 <<SQL
+GRANT USAGE, CREATE ON SCHEMA public TO ${db_user};
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${db_user};
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO ${db_user};
+SQL
+
+  PGPASSWORD="${password}" psql "host=${PGHOST} port=5432 dbname=${db_name} user=${db_user} sslmode=require" -v ON_ERROR_STOP=1 \
+    -c "SELECT current_database(), current_user, current_setting('ssl');" \
+    -c "CREATE TABLE IF NOT EXISTS cloud_shell_permission_test (id integer PRIMARY KEY);" \
+    -c "DROP TABLE cloud_shell_permission_test;"
+}
+
+grant_schema identity_app identity_presence_db "${IDENTITY_PASSWORD}"
+grant_schema wallet_app wallet_ledger_db "${WALLET_PASSWORD}"
+grant_schema transaction_app transaction_db "${TRANSACTION_PASSWORD}"
+grant_schema realtime_app realtime_projection_db "${REALTIME_PASSWORD}"
+
+az keyvault secret set --vault-name "${KEYVAULT_NAME}" --name "identity-db" --value "Host=${PGHOST};Port=5432;Database=identity_presence_db;Username=identity_app;Password=${IDENTITY_PASSWORD};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0" --output none
+az keyvault secret set --vault-name "${KEYVAULT_NAME}" --name "wallet-db" --value "Host=${PGHOST};Port=5432;Database=wallet_ledger_db;Username=wallet_app;Password=${WALLET_PASSWORD};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0" --output none
+az keyvault secret set --vault-name "${KEYVAULT_NAME}" --name "transaction-db" --value "Host=${PGHOST};Port=5432;Database=transaction_db;Username=transaction_app;Password=${TRANSACTION_PASSWORD};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0" --output none
+az keyvault secret set --vault-name "${KEYVAULT_NAME}" --name "realtime-db" --value "Host=${PGHOST};Port=5432;Database=realtime_projection_db;Username=realtime_app;Password=${REALTIME_PASSWORD};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0" --output none
+
+unset PGADMIN_PASSWORD IDENTITY_PASSWORD WALLET_PASSWORD TRANSACTION_PASSWORD REALTIME_PASSWORD
+echo "PostgreSQL roles and Key Vault connection string secrets are configured."

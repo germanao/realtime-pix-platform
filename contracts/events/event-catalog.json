@@ -1,0 +1,17 @@
+{
+  "schema": "realtime-pix.event-catalog.v1",
+  "events": [
+    "AnonymousUserJoined.v1",
+    "UserPresenceChanged.v1",
+    "AccountCreated.v1",
+    "FundsDeposited.v1",
+    "PixTransferRequested.v1",
+    "PixDebitSucceeded.v1",
+    "PixDebitFailed.v1",
+    "PixCreditSucceeded.v1",
+    "PixTransferCompleted.v1",
+    "PixTransferFailed.v1",
+    "ArchitectureFlowStepRecorded.v1"
+  ]
+}
+

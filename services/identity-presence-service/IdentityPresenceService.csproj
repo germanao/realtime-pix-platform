@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\dotnet\RealtimePix.Contracts\RealtimePix.Contracts.csproj" />
+    <ProjectReference Include="..\..\building-blocks\dotnet\RealtimePix.Eventing\RealtimePix.Eventing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.SignalR" Version="1.33.1" />
+  </ItemGroup>
+</Project>
+

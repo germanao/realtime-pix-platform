@@ -1,0 +1,67 @@
+name: destroy-poc
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type destroy-poc to destroy runtime and foundation"
+        required: true
+      destroy_foundation:
+        description: "Destroy foundation after runtime"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  destroy:
+    name: Destroy POC
+    if: inputs.confirmation == 'destroy-poc'
+    runs-on: ubuntu-latest
+    environment: poc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11.4
+
+      - name: Destroy runtime
+        working-directory: infra/terraform/runtime
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=runtime-poc.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          terraform destroy -auto-approve \
+            -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -var="image_tag=destroy-placeholder" \
+            -var="manage_vercel=false"
+
+      - name: Destroy foundation
+        if: inputs.destroy_foundation == 'true'
+        working-directory: infra/terraform/foundation
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=foundation-poc.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          terraform destroy -auto-approve \
+            -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -var="publisher_email=${{ vars.PUBLISHER_EMAIL }}"
