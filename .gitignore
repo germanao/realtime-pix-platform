@@ -17,6 +17,12 @@ apps/web/test-results/
 work/local-bus/
 work/
 infra/data/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
 *.user
 *.suo
 *.log

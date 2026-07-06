@@ -120,17 +120,17 @@ resource "azurerm_servicebus_namespace" "main" {
 resource "azurerm_servicebus_topic" "platform_events" {
   name                                    = "platform-events"
   namespace_id                            = azurerm_servicebus_namespace.main.id
-  enable_partitioning                     = true
+  partitioning_enabled                    = true
   requires_duplicate_detection            = true
   duplicate_detection_history_time_window = "PT10M"
   default_message_ttl                     = "P14D"
 }
 
 resource "azurerm_servicebus_subscription" "consumers" {
-  for_each           = local.servicebus_subscriptions
-  name               = each.key
-  topic_id           = azurerm_servicebus_topic.platform_events.id
-  max_delivery_count = 10
+  for_each            = local.servicebus_subscriptions
+  name                = each.key
+  topic_id            = azurerm_servicebus_topic.platform_events.id
+  max_delivery_count  = 10
   default_message_ttl = "P14D"
 }
 
@@ -162,16 +162,16 @@ resource "azurerm_signalr_service" "main" {
 }
 
 resource "azurerm_key_vault" "main" {
-  name                       = "kv-rtpix-${local.suffix}"
-  resource_group_name        = data.azurerm_resource_group.app.name
-  location                   = var.location
-  tenant_id                  = data.azurerm_client_config.current.tenant_id
-  sku_name                   = "standard"
-  enable_rbac_authorization  = true
-  soft_delete_retention_days = 7
-  purge_protection_enabled   = false
+  name                          = "kv-rtpix-${local.suffix}"
+  resource_group_name           = data.azurerm_resource_group.app.name
+  location                      = var.location
+  tenant_id                     = data.azurerm_client_config.current.tenant_id
+  sku_name                      = "standard"
+  rbac_authorization_enabled    = true
+  soft_delete_retention_days    = 7
+  purge_protection_enabled      = false
   public_network_access_enabled = true
-  tags                       = local.common_tags
+  tags                          = local.common_tags
 }
 
 resource "azurerm_role_assignment" "current_user_keyvault_admin" {
