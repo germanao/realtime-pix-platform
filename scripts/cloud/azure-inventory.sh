@@ -34,7 +34,7 @@ fi
 az postgres flexible-server list --resource-group "${RG}" --output json > "${OUT_DIR}/postgres-servers.json" 2>/dev/null || true
 for server in $(az postgres flexible-server list --resource-group "${RG}" --query "[].name" -o tsv 2>/dev/null || true); do
   az postgres flexible-server db list --resource-group "${RG}" --server-name "${server}" --output json > "${OUT_DIR}/postgres-${server}-databases.json" || true
-  az postgres flexible-server firewall-rule list --resource-group "${RG}" --name "${server}" --output json > "${OUT_DIR}/postgres-${server}-firewall.json" || true
+  az postgres flexible-server firewall-rule list --resource-group "${RG}" --server-name "${server}" --output json > "${OUT_DIR}/postgres-${server}-firewall.json" || true
 done
 
 az servicebus namespace list --resource-group "${RG}" --output json > "${OUT_DIR}/servicebus-namespaces.json" 2>/dev/null || true
@@ -56,7 +56,14 @@ az keyvault list-deleted --output json > "${OUT_DIR}/keyvaults-deleted-subscript
 
 az appconfig list --resource-group "${RG}" --output json > "${OUT_DIR}/appconfig-stores.json" 2>/dev/null || true
 for store in $(az appconfig list --resource-group "${RG}" --query "[].name" -o tsv 2>/dev/null || true); do
-  az appconfig kv list --name "${store}" --auth-mode login --query "[].{key:key,label:label,content_type:content_type}" --output json > "${OUT_DIR}/appconfig-${store}-keys.json" || true
+  if ! az appconfig kv list --name "${store}" --auth-mode key --query "[].{key:key,label:label,content_type:content_type}" --output json > "${OUT_DIR}/appconfig-${store}-keys.json" 2> "${OUT_DIR}/appconfig-${store}-keys-error.txt"; then
+    rm -f "${OUT_DIR}/appconfig-${store}-keys.json"
+    {
+      echo "App Configuration key listing was skipped for ${store}."
+      echo "Azure CLI data-plane authentication can fail in Cloud Shell when local access keys are unavailable or disabled."
+      echo "No secret values were exported."
+    } > "${OUT_DIR}/appconfig-${store}-keys-skipped.txt"
+  fi
 done
 
 az acr list --resource-group "${RG}" --output json > "${OUT_DIR}/acr-registries.json" 2>/dev/null || true
