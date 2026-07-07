@@ -16,17 +16,19 @@ echo "Writing inventory to ${OUT_DIR}"
 az account show --output json > "${OUT_DIR}/account.json"
 
 if az group show --name "${RG}" --output none 2>/dev/null; then
+  RG_SCOPE="$(az group show --name "${RG}" --query id -o tsv)"
   az group show --name "${RG}" --output json > "${OUT_DIR}/resource-group.json"
   az resource list --resource-group "${RG}" --output json > "${OUT_DIR}/resources.json"
-  az role assignment list --resource-group "${RG}" --all --output json > "${OUT_DIR}/rbac-resource-group.json"
+  az role assignment list --scope "${RG_SCOPE}" --include-inherited --output json > "${OUT_DIR}/rbac-resource-group.json"
 else
   echo "Resource group ${RG} was not found." > "${OUT_DIR}/resource-group-missing.txt"
 fi
 
 if az group show --name "${TFSTATE_RG}" --output none 2>/dev/null; then
+  TFSTATE_RG_SCOPE="$(az group show --name "${TFSTATE_RG}" --query id -o tsv)"
   az group show --name "${TFSTATE_RG}" --output json > "${OUT_DIR}/tfstate-resource-group.json"
   az resource list --resource-group "${TFSTATE_RG}" --output json > "${OUT_DIR}/tfstate-resources.json"
-  az role assignment list --resource-group "${TFSTATE_RG}" --all --output json > "${OUT_DIR}/rbac-tfstate-resource-group.json"
+  az role assignment list --scope "${TFSTATE_RG_SCOPE}" --include-inherited --output json > "${OUT_DIR}/rbac-tfstate-resource-group.json"
 fi
 
 az postgres flexible-server list --resource-group "${RG}" --output json > "${OUT_DIR}/postgres-servers.json" 2>/dev/null || true
