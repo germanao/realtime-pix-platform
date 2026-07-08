@@ -16,6 +16,10 @@ resource "random_id" "suffix" {
   byte_length = 4
 }
 
+resource "random_id" "app_configuration_suffix" {
+  byte_length = 4
+}
+
 resource "random_password" "postgres_admin" {
   length           = 24
   special          = true
@@ -207,7 +211,7 @@ resource "azurerm_key_vault_secret" "signalr_connection_string" {
 }
 
 resource "azurerm_app_configuration" "main" {
-  name                       = "appcs-${var.project_name}-${var.environment_name}-${local.suffix}"
+  name                       = "appcs-${var.project_name}-${var.environment_name}-${random_id.app_configuration_suffix.hex}"
   resource_group_name        = data.azurerm_resource_group.app.name
   location                   = var.location
   sku                        = "free"
