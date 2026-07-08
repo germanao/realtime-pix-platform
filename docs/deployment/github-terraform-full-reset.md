@@ -101,13 +101,9 @@ foundation. Foundation reads these bootstrap outputs through
 `bootstrap.tfstate`.
 
 ```bash
-terraform init -migrate-state \
-  -force-copy \
-  -backend-config="resource_group_name=$(terraform output -raw tfstate_resource_group_name)" \
-  -backend-config="storage_account_name=$(terraform output -raw tfstate_storage_account_name)" \
-  -backend-config="container_name=$(terraform output -raw tfstate_container_name)" \
-  -backend-config="key=bootstrap.tfstate" \
-  -backend-config="use_azuread_auth=true"
+cd ../../..
+scripts/cloud/migrate-bootstrap-state.sh
+cd infra/terraform/bootstrap
 ```
 
 Export outputs:
