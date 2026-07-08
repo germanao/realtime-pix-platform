@@ -467,19 +467,19 @@ resource "azurerm_container_app" "api_gateway" {
 
       env {
         name  = "Services__IdentityPresence"
-        value = "https://${azurerm_container_app.identity_presence.latest_revision_fqdn}"
+        value = "https://${azurerm_container_app.identity_presence.ingress[0].fqdn}"
       }
       env {
         name  = "Services__WalletLedger"
-        value = "https://${azurerm_container_app.wallet_ledger.latest_revision_fqdn}"
+        value = "https://${azurerm_container_app.wallet_ledger.ingress[0].fqdn}"
       }
       env {
         name  = "Services__Transaction"
-        value = "https://${azurerm_container_app.transaction.latest_revision_fqdn}"
+        value = "https://${azurerm_container_app.transaction.ingress[0].fqdn}"
       }
       env {
         name  = "Services__RealtimeEvents"
-        value = "https://${azurerm_container_app.realtime_events.latest_revision_fqdn}"
+        value = "https://${azurerm_container_app.realtime_events.ingress[0].fqdn}"
       }
 
       liveness_probe {
@@ -536,7 +536,7 @@ resource "azurerm_container_app" "bot" {
 
       env {
         name  = "WalletServiceUrl"
-        value = "https://${azurerm_container_app.wallet_ledger.latest_revision_fqdn}"
+        value = "https://${azurerm_container_app.wallet_ledger.ingress[0].fqdn}"
       }
 
       liveness_probe {
@@ -606,7 +606,7 @@ resource "azurerm_api_management_api" "gateway" {
   display_name        = "Realtime PIX Gateway"
   path                = "api"
   protocols           = ["https"]
-  service_url         = "https://${azurerm_container_app.api_gateway.latest_revision_fqdn}"
+  service_url         = "https://${azurerm_container_app.api_gateway.ingress[0].fqdn}"
 }
 
 resource "azurerm_api_management_api_operation" "health" {
