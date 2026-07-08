@@ -76,6 +76,12 @@ resource "azurerm_container_registry" "main" {
   tags                = local.common_tags
 }
 
+resource "azurerm_role_assignment" "github_acr_push" {
+  scope                = azurerm_container_registry.main.id
+  role_definition_name = "AcrPush"
+  principal_id         = data.terraform_remote_state.bootstrap.outputs.github_actions_principal_id
+}
+
 resource "azurerm_postgresql_flexible_server" "main" {
   name                          = "pg-${var.project_name}-${var.environment_name}-${local.suffix}"
   resource_group_name           = data.azurerm_resource_group.app.name

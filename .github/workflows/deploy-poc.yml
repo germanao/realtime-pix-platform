@@ -57,6 +57,7 @@ jobs:
         shell: bash
         run: |
           echo "acr_name=$(terraform output -raw acr_name)" >> "$GITHUB_OUTPUT"
+          echo "acr_login_server=$(terraform output -raw acr_login_server)" >> "$GITHUB_OUTPUT"
           echo "resource_group_name=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
           echo "postgres_fqdn=$(terraform output -raw postgres_fqdn)" >> "$GITHUB_OUTPUT"
           echo "postgres_server_name=$(terraform output -raw postgres_server_name)" >> "$GITHUB_OUTPUT"
@@ -102,13 +103,27 @@ jobs:
         shell: bash
         run: |
           ACR="${{ steps.foundation.outputs.acr_name }}"
+          ACR_LOGIN_SERVER="${{ steps.foundation.outputs.acr_login_server }}"
           TAG="${{ github.sha }}"
-          az acr build --registry "$ACR" --image "realtime-pix/api-gateway:$TAG" --file services/api-gateway/Dockerfile .
-          az acr build --registry "$ACR" --image "realtime-pix/identity-presence-service:$TAG" --file services/identity-presence-service/Dockerfile .
-          az acr build --registry "$ACR" --image "realtime-pix/wallet-ledger-service:$TAG" --file services/wallet-ledger-service/Dockerfile .
-          az acr build --registry "$ACR" --image "realtime-pix/transaction-service:$TAG" --file services/transaction-service/Dockerfile .
-          az acr build --registry "$ACR" --image "realtime-pix/realtime-events-service:$TAG" --file services/realtime-events-service/Dockerfile .
-          az acr build --registry "$ACR" --image "realtime-pix/bot-service:$TAG" --file services/bot-service/Dockerfile .
+          az acr login --name "$ACR"
+
+          docker build --file services/api-gateway/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/api-gateway:$TAG" .
+          docker push "$ACR_LOGIN_SERVER/realtime-pix/api-gateway:$TAG"
+
+          docker build --file services/identity-presence-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/identity-presence-service:$TAG" .
+          docker push "$ACR_LOGIN_SERVER/realtime-pix/identity-presence-service:$TAG"
+
+          docker build --file services/wallet-ledger-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/wallet-ledger-service:$TAG" .
+          docker push "$ACR_LOGIN_SERVER/realtime-pix/wallet-ledger-service:$TAG"
+
+          docker build --file services/transaction-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/transaction-service:$TAG" .
+          docker push "$ACR_LOGIN_SERVER/realtime-pix/transaction-service:$TAG"
+
+          docker build --file services/realtime-events-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/realtime-events-service:$TAG" .
+          docker push "$ACR_LOGIN_SERVER/realtime-pix/realtime-events-service:$TAG"
+
+          docker build --file services/bot-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/bot-service:$TAG" .
+          docker push "$ACR_LOGIN_SERVER/realtime-pix/bot-service:$TAG"
 
       - name: Apply runtime
         if: inputs.apply_runtime == 'true'
