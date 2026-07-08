@@ -215,15 +215,13 @@ resource "azurerm_key_vault_secret" "signalr_connection_string" {
 }
 
 resource "azurerm_app_configuration" "main" {
-  name                       = "appcs-${var.project_name}-${var.environment_name}-${random_id.app_configuration_suffix.hex}"
-  resource_group_name        = data.azurerm_resource_group.app.name
-  location                   = var.location
-  sku                        = "free"
-  local_auth_enabled         = false
-  public_network_access      = "Enabled"
-  purge_protection_enabled   = false
-  soft_delete_retention_days = 1
-  tags                       = local.common_tags
+  name                  = "appcs-${var.project_name}-${var.environment_name}-${random_id.app_configuration_suffix.hex}"
+  resource_group_name   = data.azurerm_resource_group.app.name
+  location              = var.location
+  sku                   = "free"
+  local_auth_enabled    = false
+  public_network_access = "Enabled"
+  tags                  = local.common_tags
 }
 
 resource "azurerm_container_app_environment" "main" {
