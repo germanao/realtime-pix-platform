@@ -78,8 +78,8 @@ jobs:
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
           az postgres flexible-server firewall-rule create \
             --resource-group "${{ steps.foundation.outputs.resource_group_name }}" \
-            --name "${{ steps.foundation.outputs.postgres_server_name }}" \
-            --rule-name "github-actions-${{ github.run_id }}" \
+            --server-name "${{ steps.foundation.outputs.postgres_server_name }}" \
+            --name "github-actions-${{ github.run_id }}" \
             --start-ip-address "$IP" \
             --end-ip-address "$IP"
 
@@ -144,6 +144,6 @@ jobs:
         run: |
           az postgres flexible-server firewall-rule delete \
             --resource-group "${{ steps.foundation.outputs.resource_group_name }}" \
-            --name "${{ steps.foundation.outputs.postgres_server_name }}" \
-            --rule-name "github-actions-${{ github.run_id }}" \
+            --server-name "${{ steps.foundation.outputs.postgres_server_name }}" \
+            --name "github-actions-${{ github.run_id }}" \
             --yes
