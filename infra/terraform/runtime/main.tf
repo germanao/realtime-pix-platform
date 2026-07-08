@@ -65,7 +65,7 @@ resource "azurerm_role_assignment" "apps_keyvault_secrets_user" {
 }
 
 resource "azurerm_container_app" "identity_presence" {
-  name                         = "ca-identity-presence-${var.environment_name}-${local.suffix}"
+  name                         = "ca-presence-${var.environment_name}-${local.suffix}"
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   revision_mode                = "Single"
@@ -161,7 +161,7 @@ resource "azurerm_container_app" "identity_presence" {
 }
 
 resource "azurerm_container_app" "wallet_ledger" {
-  name                         = "ca-wallet-ledger-${var.environment_name}-${local.suffix}"
+  name                         = "ca-wallet-${var.environment_name}-${local.suffix}"
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   revision_mode                = "Single"
@@ -239,7 +239,7 @@ resource "azurerm_container_app" "wallet_ledger" {
 }
 
 resource "azurerm_container_app" "transaction" {
-  name                         = "ca-transaction-${var.environment_name}-${local.suffix}"
+  name                         = "ca-tx-${var.environment_name}-${local.suffix}"
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   revision_mode                = "Single"
@@ -317,7 +317,7 @@ resource "azurerm_container_app" "transaction" {
 }
 
 resource "azurerm_container_app" "realtime_events" {
-  name                         = "ca-realtime-events-${var.environment_name}-${local.suffix}"
+  name                         = "ca-events-${var.environment_name}-${local.suffix}"
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   revision_mode                = "Single"
@@ -413,7 +413,7 @@ resource "azurerm_container_app" "realtime_events" {
 }
 
 resource "azurerm_container_app" "api_gateway" {
-  name                         = "ca-api-gateway-${var.environment_name}-${local.suffix}"
+  name                         = "ca-api-${var.environment_name}-${local.suffix}"
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   revision_mode                = "Single"
