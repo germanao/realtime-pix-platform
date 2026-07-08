@@ -20,5 +20,7 @@ gh variable set TFSTATE_STORAGE_ACCOUNT --repo "${OWNER}/${REPO}" --env "${ENVIR
 gh variable set TFSTATE_CONTAINER --repo "${OWNER}/${REPO}" --env "${ENVIRONMENT}" --body "${TFSTATE_CONTAINER}"
 
 echo "GitHub environment variables were set for ${OWNER}/${REPO}:${ENVIRONMENT}."
-echo "Set secrets separately:"
-echo "  gh secret set VERCEL_API_TOKEN --repo ${OWNER}/${REPO} --env ${ENVIRONMENT}"
+echo "Configure Vercel separately after runtime deployment using Terraform outputs:"
+echo "  NEXT_PUBLIC_API_BASE_URL"
+echo "  NEXT_PUBLIC_PRESENCE_HUB_URL"
+echo "  NEXT_PUBLIC_EVENTS_HUB_URL"

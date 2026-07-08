@@ -128,7 +128,6 @@ Create a GitHub environment named `poc`, require approval, then set:
 
 ```bash
 gh variable set PUBLISHER_EMAIL --repo germanao/realtime-pix-platform --env poc --body "you@example.com"
-gh secret set VERCEL_API_TOKEN --repo germanao/realtime-pix-platform --env poc
 ```
 
 ## 6. Foundation Terraform
@@ -182,24 +181,39 @@ scripts/cloud/remove-servicebus-default-rules.sh
 
 ## 9. Build Images
 
-GitHub Actions builds images with ACR Tasks. Manual equivalent:
+GitHub Actions builds images with Docker and pushes them to ACR. Manual
+equivalent:
 
 ```bash
 ACR_NAME="$(terraform output -raw acr_name)"
+ACR_LOGIN_SERVER="$(terraform output -raw acr_login_server)"
 TAG="$(git rev-parse --short HEAD)"
 
-az acr build --registry "$ACR_NAME" --image "realtime-pix/api-gateway:$TAG" --file services/api-gateway/Dockerfile .
-az acr build --registry "$ACR_NAME" --image "realtime-pix/identity-presence-service:$TAG" --file services/identity-presence-service/Dockerfile .
-az acr build --registry "$ACR_NAME" --image "realtime-pix/wallet-ledger-service:$TAG" --file services/wallet-ledger-service/Dockerfile .
-az acr build --registry "$ACR_NAME" --image "realtime-pix/transaction-service:$TAG" --file services/transaction-service/Dockerfile .
-az acr build --registry "$ACR_NAME" --image "realtime-pix/realtime-events-service:$TAG" --file services/realtime-events-service/Dockerfile .
-az acr build --registry "$ACR_NAME" --image "realtime-pix/bot-service:$TAG" --file services/bot-service/Dockerfile .
+az acr login --name "$ACR_NAME"
+
+docker build --file services/api-gateway/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/api-gateway:$TAG" .
+docker push "$ACR_LOGIN_SERVER/realtime-pix/api-gateway:$TAG"
+
+docker build --file services/identity-presence-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/identity-presence-service:$TAG" .
+docker push "$ACR_LOGIN_SERVER/realtime-pix/identity-presence-service:$TAG"
+
+docker build --file services/wallet-ledger-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/wallet-ledger-service:$TAG" .
+docker push "$ACR_LOGIN_SERVER/realtime-pix/wallet-ledger-service:$TAG"
+
+docker build --file services/transaction-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/transaction-service:$TAG" .
+docker push "$ACR_LOGIN_SERVER/realtime-pix/transaction-service:$TAG"
+
+docker build --file services/realtime-events-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/realtime-events-service:$TAG" .
+docker push "$ACR_LOGIN_SERVER/realtime-pix/realtime-events-service:$TAG"
+
+docker build --file services/bot-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/bot-service:$TAG" .
+docker push "$ACR_LOGIN_SERVER/realtime-pix/bot-service:$TAG"
 ```
 
 ## 10. Runtime Terraform
 
 Runtime deploys the six Container Apps, managed identities/RBAC, public
-endpoints, APIM health route, and optional Vercel environment variables.
+endpoints, and APIM health route.
 
 ```bash
 cd ../runtime
@@ -217,25 +231,23 @@ terraform apply \
   -var="image_tag=$TAG"
 ```
 
-## 11. Vercel Import
+## 11. Vercel Configuration
 
-The existing `realtime-pix-web` project must be imported once:
+The existing `realtime-pix-web` project is configured separately from backend
+Terraform. After runtime applies, read the public URLs:
 
 ```bash
-export VERCEL_API_TOKEN="<token>"
-
-terraform import \
-  -var="tfstate_resource_group_name=$TFSTATE_RESOURCE_GROUP" \
-  -var="tfstate_storage_account_name=$TFSTATE_STORAGE_ACCOUNT" \
-  -var="tfstate_container_name=$TFSTATE_CONTAINER" \
-  -var="image_tag=$TAG" \
-  -var="manage_vercel=true" \
-  -var="vercel_api_token=$VERCEL_API_TOKEN" \
-  'vercel_project.web[0]' \
-  prj_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+cd infra/terraform/runtime
+terraform output -raw api_base_url
+terraform output -raw presence_hub_url
+terraform output -raw events_hub_url
 ```
 
-Then re-apply with `-var="manage_vercel=true"`.
+Set these public variables in Vercel:
+
+- `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_PRESENCE_HUB_URL`
+- `NEXT_PUBLIC_EVENTS_HUB_URL`
 
 ## 12. GitHub Actions
 
@@ -251,17 +263,7 @@ First deployment:
 ```bash
 gh workflow run deploy-poc.yml \
   --repo germanao/realtime-pix-platform \
-  -f apply_runtime=true \
-  -f manage_vercel=false
-```
-
-After Vercel import:
-
-```bash
-gh workflow run deploy-poc.yml \
-  --repo germanao/realtime-pix-platform \
-  -f apply_runtime=true \
-  -f manage_vercel=true
+  -f apply_runtime=true
 ```
 
 ## 13. Validation

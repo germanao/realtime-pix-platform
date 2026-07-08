@@ -1,7 +1,7 @@
 # Runtime Terraform
 
-This stack deploys the six Container Apps and public endpoints. It expects images
-to already exist in ACR with the tag passed by `image_tag`.
+This stack deploys the six Container Apps and public Azure endpoints. It expects
+images to already exist in ACR with the tag passed by `image_tag`.
 
 Initialize:
 
@@ -24,15 +24,9 @@ terraform apply \
   -var="image_tag=$(git rev-parse --short HEAD)"
 ```
 
-Vercel is disabled by default because an existing project must be imported into
-state once:
+The frontend is hosted separately in Vercel. After this stack applies, use the
+runtime outputs to configure these Vercel environment variables:
 
-```bash
-terraform import \
-  -var="manage_vercel=true" \
-  -var="vercel_api_token=$VERCEL_API_TOKEN" \
-  'vercel_project.web[0]' \
-  prj_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-After import, re-run `terraform apply -var="manage_vercel=true" ...`.
+- `NEXT_PUBLIC_API_BASE_URL` from `terraform output -raw api_base_url`
+- `NEXT_PUBLIC_PRESENCE_HUB_URL` from `terraform output -raw presence_hub_url`
+- `NEXT_PUBLIC_EVENTS_HUB_URL` from `terraform output -raw events_hub_url`

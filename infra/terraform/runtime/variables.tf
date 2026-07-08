@@ -42,49 +42,6 @@ variable "allowed_cors_origins" {
   default     = ["http://localhost:3000", "https://realtime-pix-web.vercel.app"]
 }
 
-variable "manage_vercel" {
-  description = "Whether Terraform should manage/import the Vercel project and public environment variables."
-  type        = bool
-  default     = false
-}
-
-variable "vercel_api_token" {
-  description = "Vercel API token. Required only when manage_vercel is true."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "vercel_team_id" {
-  description = "Optional Vercel team id."
-  type        = string
-  default     = null
-}
-
-variable "vercel_project_name" {
-  description = "Vercel project name."
-  type        = string
-  default     = "realtime-pix-web"
-}
-
-variable "github_owner" {
-  description = "GitHub repository owner."
-  type        = string
-  default     = "germanao"
-}
-
-variable "github_repository" {
-  description = "GitHub repository name."
-  type        = string
-  default     = "realtime-pix-platform"
-}
-
-variable "github_branch" {
-  description = "Production branch for Vercel."
-  type        = string
-  default     = "main"
-}
-
 variable "tags" {
   description = "Tags applied to Azure resources."
   type        = map(string)

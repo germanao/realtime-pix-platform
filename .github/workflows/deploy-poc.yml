@@ -9,12 +9,6 @@ on:
         default: "true"
         type: choice
         options: ["true", "false"]
-      manage_vercel:
-        description: "Let Terraform manage Vercel project/env vars"
-        required: true
-        default: "false"
-        type: choice
-        options: ["false", "true"]
 
 permissions:
   contents: read
@@ -128,8 +122,6 @@ jobs:
       - name: Apply runtime
         if: inputs.apply_runtime == 'true'
         working-directory: infra/terraform/runtime
-        env:
-          VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
         run: |
           terraform init \
             -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
@@ -141,9 +133,7 @@ jobs:
             -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
             -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
             -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -var="image_tag=${{ github.sha }}" \
-            -var="manage_vercel=${{ inputs.manage_vercel }}" \
-            -var="vercel_api_token=${VERCEL_API_TOKEN}"
+            -var="image_tag=${{ github.sha }}"
 
       - name: Smoke test
         if: inputs.apply_runtime == 'true'

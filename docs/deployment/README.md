@@ -37,7 +37,7 @@ the complete PIX event flow across separate cloud containers.
 | Realtime projections | In-memory timeline and flow | Timeline is lost on restart |
 | PostgreSQL | Local containers and SQL bootstrap files | Application services do not yet use the databases |
 | SignalR | Direct hubs locally, optional Azure SignalR by connection string | Cloud uses Azure SignalR when `AzureSignalR:ConnectionString` is present |
-| Docker | Service Dockerfiles exist | Images are built through ACR Tasks in GitHub Actions |
+| Docker | Service Dockerfiles exist | Images are built locally in GitHub Actions and pushed to ACR |
 
 The Portal guide therefore defines two milestones:
 
