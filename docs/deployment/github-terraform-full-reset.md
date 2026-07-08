@@ -88,12 +88,26 @@ OIDC identity, RBAC, and optional budget.
 
 ```bash
 cd infra/terraform/bootstrap
-terraform init
+terraform init -backend=false
 terraform apply \
   -var="github_owner=germanao" \
   -var="github_repository=realtime-pix-platform" \
   -var="github_environment_name=poc" \
   -var="budget_contact_emails=[\"you@example.com\"]"
+```
+
+Migrate the bootstrap state into the Azure Blob backend before running
+foundation. Foundation reads these bootstrap outputs through
+`bootstrap.tfstate`.
+
+```bash
+terraform init -migrate-state \
+  -force-copy \
+  -backend-config="resource_group_name=$(terraform output -raw tfstate_resource_group_name)" \
+  -backend-config="storage_account_name=$(terraform output -raw tfstate_storage_account_name)" \
+  -backend-config="container_name=$(terraform output -raw tfstate_container_name)" \
+  -backend-config="key=bootstrap.tfstate" \
+  -backend-config="use_azuread_auth=true"
 ```
 
 Export outputs:
