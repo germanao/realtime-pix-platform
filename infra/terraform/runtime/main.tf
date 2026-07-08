@@ -34,6 +34,7 @@ locals {
 
   common_env = [
     { name = "ASPNETCORE_ENVIRONMENT", value = "Production" },
+    { name = "ASPNETCORE_URLS", value = "http://0.0.0.0:8080" },
     { name = "ASPNETCORE_HTTP_PORTS", value = "8080" },
     { name = "AppConfiguration__Endpoint", value = data.terraform_remote_state.foundation.outputs.app_configuration_endpoint },
     { name = "AppConfiguration__Label", value = var.app_config_label },

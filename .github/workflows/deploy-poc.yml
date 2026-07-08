@@ -152,6 +152,36 @@ jobs:
             --max-time 30 \
             "${API_URL}/health"
 
+      - name: Dump Container Apps diagnostics
+        if: failure() && inputs.apply_runtime == 'true'
+        shell: bash
+        run: |
+          RG="${{ steps.foundation.outputs.resource_group_name }}"
+
+          echo "::group::Container Apps"
+          az containerapp list \
+            --resource-group "$RG" \
+            --query "[].{name:name, provisioningState:properties.provisioningState, runningStatus:properties.runningStatus, fqdn:properties.configuration.ingress.fqdn, latestRevision:properties.latestRevisionName}" \
+            --output table || true
+          echo "::endgroup::"
+
+          for app in $(az containerapp list --resource-group "$RG" --query "[].name" --output tsv); do
+            echo "::group::${app} revisions"
+            az containerapp revision list \
+              --resource-group "$RG" \
+              --name "$app" \
+              --query "[].{name:name, active:properties.active, trafficWeight:properties.trafficWeight, healthState:properties.healthState, provisioningState:properties.provisioningState, createdTime:properties.createdTime}" \
+              --output table || true
+            echo "::endgroup::"
+
+            echo "::group::${app} logs"
+            az containerapp logs show \
+              --resource-group "$RG" \
+              --name "$app" \
+              --tail 80 || true
+            echo "::endgroup::"
+          done
+
       - name: Remove temporary PostgreSQL firewall rule
         if: always() && steps.runner_ip.outputs.ip != ''
         shell: bash

@@ -18,7 +18,8 @@ RUN dotnet publish "services/api-gateway/ApiGateway.csproj" \
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
-ENV ASPNETCORE_HTTP_PORTS=8080 \
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    ASPNETCORE_HTTP_PORTS=8080 \
     DOTNET_ENVIRONMENT=Production \
     EventBus__Directory=/tmp/realtime-pix-bus
 EXPOSE 8080

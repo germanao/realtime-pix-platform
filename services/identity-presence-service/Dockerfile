@@ -20,7 +20,8 @@ RUN dotnet publish "services/identity-presence-service/IdentityPresenceService.c
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
-ENV ASPNETCORE_HTTP_PORTS=8080 \
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    ASPNETCORE_HTTP_PORTS=8080 \
     DOTNET_ENVIRONMENT=Production \
     EventBus__Directory=/tmp/realtime-pix-bus
 EXPOSE 8080
