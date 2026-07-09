@@ -9,6 +9,12 @@ on:
         default: "true"
         type: choice
         options: ["true", "false"]
+      reset_databases:
+        description: "Drop and recreate service database schemas before migrations"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
 
 permissions:
   contents: read
@@ -90,6 +96,14 @@ jobs:
           PGADMIN_USER: ${{ steps.foundation.outputs.postgres_admin_login }}
           KEYVAULT_NAME: ${{ steps.foundation.outputs.key_vault_name }}
         run: bash scripts/cloud/postgres-bootstrap-noninteractive.sh
+
+      - name: Reset PostgreSQL schemas
+        if: ${{ github.event.inputs.reset_databases == 'true' }}
+        shell: bash
+        env:
+          PGHOST: ${{ steps.foundation.outputs.postgres_fqdn }}
+          KEYVAULT_NAME: ${{ steps.foundation.outputs.key_vault_name }}
+        run: bash scripts/cloud/reset-postgres-schemas.sh
 
       - name: Apply EF Core migrations
         shell: bash
