@@ -34,20 +34,20 @@ if (-not $SkipInfra) {
 }
 
 $services = @(
-    "services/identity-presence-service/IdentityPresenceService.csproj",
-    "services/wallet-ledger-service/WalletLedgerService.csproj",
-    "services/transaction-service/TransactionService.csproj",
-    "services/realtime-events-service/RealtimeEventsService.csproj",
-    "services/bot-service/BotService.csproj",
-    "services/api-gateway/ApiGateway.csproj"
+    @{ Project = "services/identity-presence-service/IdentityPresenceService.csproj"; Port = 5101 },
+    @{ Project = "services/wallet-ledger-service/WalletLedgerService.csproj"; Port = 5102 },
+    @{ Project = "services/transaction-service/TransactionService.csproj"; Port = 5103 },
+    @{ Project = "services/realtime-events-service/RealtimeEventsService.csproj"; Port = 5104 },
+    @{ Project = "services/bot-service/BotService.csproj"; Port = 5105 },
+    @{ Project = "services/api-gateway/ApiGateway.csproj"; Port = 5100 }
 )
 
 foreach ($service in $services) {
-    $project = Join-Path $root $service
-    $name = Split-Path (Split-Path $service -Parent) -Leaf
+    $project = Join-Path $root $service.Project
+    $name = Split-Path (Split-Path $service.Project -Parent) -Leaf
     $stdout = Join-Path $logDir "$name.out.log"
     $stderr = Join-Path $logDir "$name.err.log"
-    $command = "dotnet run --project `"$project`" --configuration Release --no-build 1> `"$stdout`" 2> `"$stderr`""
+    $command = "set ASPNETCORE_URLS=http://localhost:$($service.Port)&& dotnet run --project `"$project`" --configuration Release --no-build 1> `"$stdout`" 2> `"$stderr`""
     Start-HiddenDevProcess -Name $name -Command $command -WorkingDirectory $root
 }
 

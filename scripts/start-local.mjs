@@ -20,7 +20,8 @@ function start(name, command, commandArgs, cwd = root, options = {}) {
     detached: true,
     env: {
       ...process.env,
-      EventBus__Directory: eventBusDir
+      EventBus__Directory: eventBusDir,
+      ...(options.env ?? {})
     },
     stdio: ["ignore", stdout, stderr],
     windowsHide: true,
@@ -36,17 +37,21 @@ if (!args.has("--skip-infra") && !args.has("--frontend-only")) {
 }
 
 const services = [
-  ["identity-presence-service", "services/identity-presence-service/IdentityPresenceService.csproj"],
-  ["wallet-ledger-service", "services/wallet-ledger-service/WalletLedgerService.csproj"],
-  ["transaction-service", "services/transaction-service/TransactionService.csproj"],
-  ["realtime-events-service", "services/realtime-events-service/RealtimeEventsService.csproj"],
-  ["bot-service", "services/bot-service/BotService.csproj"],
-  ["api-gateway", "services/api-gateway/ApiGateway.csproj"]
+  ["identity-presence-service", "services/identity-presence-service/IdentityPresenceService.csproj", 5101],
+  ["wallet-ledger-service", "services/wallet-ledger-service/WalletLedgerService.csproj", 5102],
+  ["transaction-service", "services/transaction-service/TransactionService.csproj", 5103],
+  ["realtime-events-service", "services/realtime-events-service/RealtimeEventsService.csproj", 5104],
+  ["bot-service", "services/bot-service/BotService.csproj", 5105],
+  ["api-gateway", "services/api-gateway/ApiGateway.csproj", 5100]
 ];
 
 if (!args.has("--frontend-only")) {
-  for (const [name, project] of services) {
-    start(name, dotnet, ["run", "--project", path.join(root, project), "--configuration", "Release", "--no-build"]);
+  for (const [name, project, port] of services) {
+    start(name, dotnet, ["run", "--project", path.join(root, project), "--configuration", "Release", "--no-build"], root, {
+      env: {
+        ASPNETCORE_URLS: `http://localhost:${port}`
+      }
+    });
   }
 
   console.log("Backend services are starting. API Gateway: http://localhost:5100");
