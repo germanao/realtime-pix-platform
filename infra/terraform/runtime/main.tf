@@ -737,14 +737,15 @@ resource "azurerm_role_assignment" "signalr_app_server" {
 }
 
 resource "azurerm_api_management_api" "gateway" {
-  name                = "realtime-pix-gateway"
-  resource_group_name = local.resource_group_name
-  api_management_name = data.terraform_remote_state.foundation.outputs.apim_name
-  revision            = "1"
-  display_name        = "Realtime PIX Gateway"
-  path                = "api"
-  protocols           = ["https"]
-  service_url         = "https://${azurerm_container_app.api_gateway.ingress[0].fqdn}"
+  name                  = "realtime-pix-gateway"
+  resource_group_name   = local.resource_group_name
+  api_management_name   = data.terraform_remote_state.foundation.outputs.apim_name
+  revision              = "1"
+  display_name          = "Realtime PIX Gateway"
+  path                  = "api"
+  protocols             = ["https"]
+  subscription_required = false
+  service_url           = "https://${azurerm_container_app.api_gateway.ingress[0].fqdn}"
 }
 
 resource "azurerm_api_management_api_operation" "public_routes" {
