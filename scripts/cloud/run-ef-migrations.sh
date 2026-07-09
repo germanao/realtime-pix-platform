@@ -18,7 +18,6 @@ run_migration() {
   dotnet tool run dotnet-ef migrations bundle \
     --project "${project_path}" \
     --configuration Release \
-    --self-contained false \
     --no-build \
     --force \
     --output "${bundle_path}"
