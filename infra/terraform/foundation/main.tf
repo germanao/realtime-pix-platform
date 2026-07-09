@@ -289,7 +289,7 @@ resource "azurerm_monitor_metric_alert" "servicebus_dead_letters" {
   criteria {
     metric_namespace = "Microsoft.ServiceBus/namespaces"
     metric_name      = "DeadletteredMessages"
-    aggregation      = "Total"
+    aggregation      = "Maximum"
     operator         = "GreaterThan"
     threshold        = 0
   }
@@ -391,32 +391,27 @@ resource "azurerm_api_management" "main" {
   tags                = local.common_tags
 }
 
-resource "azurerm_monitor_metric_alert" "apim_failed_requests" {
-  name                = "alert-${var.project_name}-${var.environment_name}-apim-5xx-${local.suffix}"
-  resource_group_name = data.azurerm_resource_group.app.name
-  scopes              = [azurerm_api_management.main.id]
-  description         = "APIM returned failed requests above the POC threshold."
-  severity            = 2
-  frequency           = "PT5M"
-  window_size         = "PT15M"
-  tags                = local.common_tags
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "api_failed_requests" {
+  name                 = "alert-${var.project_name}-${var.environment_name}-api-failures-${local.suffix}"
+  resource_group_name  = data.azurerm_resource_group.app.name
+  location             = var.location
+  scopes               = [azurerm_log_analytics_workspace.main.id]
+  description          = "HTTP API failures were detected in Application Insights request telemetry."
+  severity             = 2
+  enabled              = true
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT15M"
+  tags                 = local.common_tags
 
   criteria {
-    metric_namespace = "Microsoft.ApiManagement/service"
-    metric_name      = "Requests"
-    aggregation      = "Total"
-    operator         = "GreaterThan"
-    threshold        = 5
-
-    dimension {
-      name     = "ResponseCode"
-      operator = "Include"
-      values   = ["5xx"]
-    }
+    query                   = "AppRequests | where Success == false"
+    time_aggregation_method = "Count"
+    operator                = "GreaterThan"
+    threshold               = 5
   }
 
   action {
-    action_group_id = azurerm_monitor_action_group.showcase.id
+    action_groups = [azurerm_monitor_action_group.showcase.id]
   }
 }
 
