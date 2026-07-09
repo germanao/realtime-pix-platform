@@ -770,39 +770,3 @@ resource "azurerm_api_management_api_operation" "public_routes" {
     status_code = each.value.status_code
   }
 }
-
-resource "azurerm_api_management_api_policy" "cors" {
-  api_name            = azurerm_api_management_api.gateway.name
-  api_management_name = data.terraform_remote_state.foundation.outputs.apim_name
-  resource_group_name = local.resource_group_name
-
-  xml_content = <<XML
-<policies>
-  <inbound>
-    <cors>
-      <allowed-origins>
-${join("", [for origin in var.allowed_cors_origins : "        <origin>${origin}</origin>\n"])}
-      </allowed-origins>
-      <allowed-methods>
-        <method>GET</method>
-        <method>POST</method>
-        <method>OPTIONS</method>
-      </allowed-methods>
-      <allowed-headers>
-        <header>*</header>
-      </allowed-headers>
-    </cors>
-    <base />
-  </inbound>
-  <backend>
-    <base />
-  </backend>
-  <outbound>
-    <base />
-  </outbound>
-  <on-error>
-    <base />
-  </on-error>
-</policies>
-XML
-}
