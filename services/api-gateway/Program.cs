@@ -1,12 +1,19 @@
 using System.Text;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
+using RealtimePix.Eventing;
 
 const string ServiceName = "api-gateway";
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddRealtimePixAzureAppConfiguration();
 builder.Services.AddCors();
+builder.Services.AddOpenTelemetry().UseAzureMonitor();
 
 var app = builder.Build();
-app.UseCors(policy => policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin());
+app.UseCors(policy => policy
+    .SetIsOriginAllowed(origin => CorsOrigins.IsAllowed(origin, app.Configuration))
+    .AllowAnyHeader()
+    .AllowAnyMethod());
 
 app.MapGet("/health", () => Results.Ok(new { service = ServiceName, status = "ok" }));
 app.MapGet("/health/live", () => Results.Ok(new { service = ServiceName, status = "live" }));

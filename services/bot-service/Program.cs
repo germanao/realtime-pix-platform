@@ -1,10 +1,13 @@
 using System.Net.Http.Json;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using RealtimePix.Contracts;
 using RealtimePix.Eventing;
 
 const string ServiceName = "bot-service";
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddRealtimePixAzureAppConfiguration();
+builder.Services.AddOpenTelemetry().UseAzureMonitor();
 builder.Services.AddRealtimePixEventBus(builder.Configuration, ServiceName);
 builder.Services.AddHostedService<BotHeartbeatWorker>();
 

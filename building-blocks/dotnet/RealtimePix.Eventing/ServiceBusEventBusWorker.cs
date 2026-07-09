@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,18 +10,11 @@ namespace RealtimePix.Eventing;
 public sealed class ServiceBusEventBusWorker(
     ServiceBusClient client,
     IOptions<ServiceBusEventBusOptions> options,
-    IEnumerable<IIntegrationEventHandler> handlers,
+    IServiceScopeFactory scopeFactory,
     ILogger<ServiceBusEventBusWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var handlerList = handlers.ToArray();
-        if (handlerList.Length == 0)
-        {
-            logger.LogInformation("Service Bus worker skipped because no handlers are registered.");
-            return;
-        }
-
         var busOptions = options.Value;
         if (string.IsNullOrWhiteSpace(busOptions.SubscriptionName))
         {
@@ -36,7 +30,7 @@ public sealed class ServiceBusEventBusWorker(
                 MaxConcurrentCalls = Math.Max(1, busOptions.MaxConcurrentCalls)
             });
 
-        processor.ProcessMessageAsync += message => ProcessMessageAsync(message, handlerList, stoppingToken);
+        processor.ProcessMessageAsync += message => ProcessMessageAsync(message, stoppingToken);
         processor.ProcessErrorAsync += ProcessErrorAsync;
 
         await processor.StartProcessingAsync(stoppingToken);
@@ -58,21 +52,41 @@ public sealed class ServiceBusEventBusWorker(
 
     private async Task ProcessMessageAsync(
         ProcessMessageEventArgs args,
-        IReadOnlyCollection<IIntegrationEventHandler> handlers,
         CancellationToken cancellationToken)
     {
+        EventEnvelope? envelope = null;
         try
         {
-            var envelope = JsonSerializer.Deserialize<EventEnvelope>(args.Message.Body, JsonDefaults.Options);
+            envelope = JsonSerializer.Deserialize<EventEnvelope>(args.Message.Body, JsonDefaults.Options);
             if (envelope is null)
             {
                 await args.DeadLetterMessageAsync(args.Message, "InvalidEnvelope", "The message body could not be deserialized as an event envelope.", cancellationToken);
                 return;
             }
 
+            using var scope = scopeFactory.CreateScope();
+            var handlers = scope.ServiceProvider.GetServices<IIntegrationEventHandler>().ToArray();
+            if (handlers.Length == 0)
+            {
+                await args.CompleteMessageAsync(args.Message, cancellationToken);
+                return;
+            }
+
+            var inbox = scope.ServiceProvider.GetService<IIntegrationInbox>();
+            if (inbox is not null && !await inbox.TryBeginProcessingAsync(envelope, cancellationToken))
+            {
+                await args.CompleteMessageAsync(args.Message, cancellationToken);
+                return;
+            }
+
             foreach (var handler in handlers.Where(handler => handler.EventTypes.Contains(envelope.EventType)))
             {
                 await handler.HandleAsync(envelope, cancellationToken);
+            }
+
+            if (inbox is not null)
+            {
+                await inbox.MarkProcessedAsync(envelope, cancellationToken);
             }
 
             await args.CompleteMessageAsync(args.Message, cancellationToken);
@@ -84,6 +98,16 @@ public sealed class ServiceBusEventBusWorker(
         }
         catch (Exception ex)
         {
+            if (envelope is not null)
+            {
+                using var failureScope = scopeFactory.CreateScope();
+                var inbox = failureScope.ServiceProvider.GetService<IIntegrationInbox>();
+                if (inbox is not null)
+                {
+                    await inbox.MarkFailedAsync(envelope, ex, cancellationToken);
+                }
+            }
+
             logger.LogError(ex, "Service Bus message {MessageId} failed and will be retried.", args.Message.MessageId);
             throw;
         }

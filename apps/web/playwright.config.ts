@@ -6,9 +6,8 @@ export default defineConfig({
   workers: 1,
   reporter: "list",
   use: {
-    ...devices["Desktop Edge"],
-    baseURL: "http://localhost:3000",
-    channel: "msedge",
+    ...devices["Desktop Chrome"],
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
     headless: true,
     trace: "retain-on-failure"
   }

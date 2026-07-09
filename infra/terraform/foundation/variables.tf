@@ -51,7 +51,7 @@ variable "publisher_email" {
 variable "allowed_cors_origins" {
   description = "Browser origins allowed by Azure SignalR and APIM."
   type        = list(string)
-  default     = ["http://localhost:3000", "https://realtime-pix-web.vercel.app"]
+  default     = ["http://localhost:3000", "https://realtime-pix-web.vercel.app", "https://realtime-pix-web*.vercel.app"]
 }
 
 variable "tags" {

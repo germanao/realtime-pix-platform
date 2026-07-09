@@ -1,17 +1,21 @@
 using System.Collections.Concurrent;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using RealtimePix.Contracts;
 using RealtimePix.Eventing;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddRealtimePixAzureAppConfiguration();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("browser", policy =>
-        policy.SetIsOriginAllowed(_ => true)
+        policy.SetIsOriginAllowed(origin => CorsOrigins.IsAllowed(origin, builder.Configuration))
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials());
 });
+builder.Services.AddOpenTelemetry().UseAzureMonitor();
 var signalRBuilder = builder.Services.AddSignalR();
 var azureSignalRConnectionString = builder.Configuration["AzureSignalR:ConnectionString"];
 if (!string.IsNullOrWhiteSpace(azureSignalRConnectionString))
@@ -19,9 +23,25 @@ if (!string.IsNullOrWhiteSpace(azureSignalRConnectionString))
     signalRBuilder.AddAzureSignalR(azureSignalRConnectionString);
 }
 
-builder.Services.AddSingleton<PresenceStore>();
+var defaultConnectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(defaultConnectionString))
+{
+    builder.Services.AddSingleton<PresenceStore>();
+    builder.Services.AddSingleton<IPresenceStore>(serviceProvider =>
+        new InMemoryPresenceStoreAdapter(serviceProvider.GetRequiredService<PresenceStore>()));
+}
+else
+{
+    builder.Services.AddDbContext<IdentityPresenceDbContext>(options => options.UseNpgsql(defaultConnectionString));
+    builder.Services.AddScoped<IPresenceStore, EfPresenceStore>();
+}
+
 builder.Services.AddSingleton<PresenceBroadcaster>();
 builder.Services.AddRealtimePixEventBus(builder.Configuration, IdentityPresenceServiceMetadata.Name);
+if (!string.IsNullOrWhiteSpace(defaultConnectionString))
+{
+    builder.Services.AddRealtimePixEfCoreEventing<IdentityPresenceDbContext>();
+}
 
 var app = builder.Build();
 app.UseCors("browser");
@@ -33,11 +53,11 @@ app.MapHub<PresenceHub>("/presence/hub");
 
 app.MapPost("/sessions/anonymous", async (
     AnonymousSessionRequest request,
-    PresenceStore store,
+    IPresenceStore store,
     IIntegrationEventPublisher publisher,
     CancellationToken cancellationToken) =>
 {
-    var session = store.JoinAnonymous(request.ClientId);
+    var session = await store.JoinAnonymousAsync(request.ClientId, cancellationToken);
 
     await publisher.PublishAsync(
         EventTypes.AnonymousUserJoined,
@@ -60,11 +80,11 @@ app.MapPost("/sessions/anonymous", async (
 
 app.MapPost("/presence/heartbeat", async (
     PresenceHeartbeatRequest request,
-    PresenceStore store,
+    IPresenceStore store,
     IIntegrationEventPublisher publisher,
     CancellationToken cancellationToken) =>
 {
-    var user = store.Heartbeat(request.UserId);
+    var user = await store.HeartbeatAsync(request.UserId, cancellationToken);
     if (user is null)
     {
         return Results.NotFound(new { message = "Unknown user." });
@@ -83,12 +103,12 @@ app.MapPost("/presence/heartbeat", async (
 
 app.MapPost("/presence/leave", async (
     PresenceLeaveRequest request,
-    PresenceStore store,
+    IPresenceStore store,
     PresenceBroadcaster broadcaster,
     IIntegrationEventPublisher publisher,
     CancellationToken cancellationToken) =>
 {
-    var result = store.Leave(request.UserId, request.ConnectionId);
+    var result = await store.LeaveAsync(request.UserId, request.ConnectionId, cancellationToken);
     if (result is null)
     {
         return Results.NotFound(new { message = "Unknown user." });
@@ -109,7 +129,8 @@ app.MapPost("/presence/leave", async (
     return Results.Ok(result.User);
 });
 
-app.MapGet("/presence/users", (PresenceStore store) => Results.Ok(store.GetActiveUsers()));
+app.MapGet("/presence/users", async (IPresenceStore store, CancellationToken cancellationToken) =>
+    Results.Ok(await store.GetActiveUsersAsync(cancellationToken)));
 
 app.Run();
 
@@ -144,6 +165,54 @@ public sealed record PresenceLeaveResult(
     PresenceUserResponse? User,
     bool BecameOffline,
     IReadOnlyCollection<PresenceUserResponse> ActiveUsers);
+
+public interface IPresenceStore
+{
+    Task<AnonymousSessionResponse> JoinAnonymousAsync(string? clientId, CancellationToken cancellationToken);
+
+    Task<PresenceJoinResult> ConnectAnonymousAsync(string? clientId, string connectionId, CancellationToken cancellationToken);
+
+    Task<PresenceUserResponse?> HeartbeatAsync(string userId, CancellationToken cancellationToken);
+
+    Task<PresenceLeaveResult?> LeaveAsync(string userId, string? connectionId, CancellationToken cancellationToken);
+
+    Task<PresenceLeaveResult?> DisconnectAsync(string connectionId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<PresenceUserResponse>> GetActiveUsersAsync(CancellationToken cancellationToken);
+}
+
+public sealed class InMemoryPresenceStoreAdapter(PresenceStore inner) : IPresenceStore
+{
+    public Task<AnonymousSessionResponse> JoinAnonymousAsync(string? clientId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.JoinAnonymous(clientId));
+    }
+
+    public Task<PresenceJoinResult> ConnectAnonymousAsync(string? clientId, string connectionId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.ConnectAnonymous(clientId, connectionId));
+    }
+
+    public Task<PresenceUserResponse?> HeartbeatAsync(string userId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.Heartbeat(userId));
+    }
+
+    public Task<PresenceLeaveResult?> LeaveAsync(string userId, string? connectionId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.Leave(userId, connectionId));
+    }
+
+    public Task<PresenceLeaveResult?> DisconnectAsync(string connectionId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.Disconnect(connectionId));
+    }
+
+    public Task<IReadOnlyCollection<PresenceUserResponse>> GetActiveUsersAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.GetActiveUsers());
+    }
+}
 
 public sealed class PresenceStore
 {
@@ -332,7 +401,7 @@ public sealed class PresenceStore
         return new PresenceUserResponse(user.UserId, user.DisplayName, user.IsBot, IsOnline(user), user.LastSeenAt);
     }
 
-    private static string CreateDisplayName(string clientId)
+    public static string CreateDisplayName(string clientId)
     {
         var score = clientId.Sum(character => character);
         return $"{Adjectives[score % Adjectives.Length]} {Nouns[(score / Adjectives.Length) % Nouns.Length]}";
@@ -363,13 +432,13 @@ public sealed class PresenceBroadcaster(IHubContext<PresenceHub> hubContext)
 }
 
 public sealed class PresenceHub(
-    PresenceStore store,
+    IPresenceStore store,
     PresenceBroadcaster broadcaster,
     IIntegrationEventPublisher publisher) : Hub
 {
     public async Task<AnonymousSessionResponse> Join(AnonymousSessionRequest request)
     {
-        var result = store.ConnectAnonymous(request.ClientId, Context.ConnectionId);
+        var result = await store.ConnectAnonymousAsync(request.ClientId, Context.ConnectionId, Context.ConnectionAborted);
 
         if (result.IsNewUser)
         {
@@ -399,7 +468,7 @@ public sealed class PresenceHub(
 
     public async Task Leave(PresenceLeaveRequest request)
     {
-        var result = store.Leave(request.UserId, request.ConnectionId ?? Context.ConnectionId);
+        var result = await store.LeaveAsync(request.UserId, request.ConnectionId ?? Context.ConnectionId, Context.ConnectionAborted);
         if (result is null)
         {
             return;
@@ -421,7 +490,7 @@ public sealed class PresenceHub(
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var result = store.Disconnect(Context.ConnectionId);
+        var result = await store.DisconnectAsync(Context.ConnectionId, CancellationToken.None);
         if (result?.BecameOffline == true && result.User is not null)
         {
             await publisher.PublishAsync(

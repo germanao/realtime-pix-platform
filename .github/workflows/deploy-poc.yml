@@ -19,6 +19,8 @@ jobs:
     name: Deploy POC
     runs-on: ubuntu-latest
     environment: poc
+    env:
+      VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: azure/login@v2
@@ -29,6 +31,9 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.11.4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
 
       - name: Apply foundation
         working-directory: infra/terraform/foundation
@@ -78,13 +83,19 @@ jobs:
             --start-ip-address "$IP" \
             --end-ip-address "$IP"
 
-      - name: Bootstrap PostgreSQL roles, schemas, and connection secrets
+      - name: Bootstrap PostgreSQL roles, permissions, and connection secrets
         shell: bash
         env:
           PGHOST: ${{ steps.foundation.outputs.postgres_fqdn }}
           PGADMIN_USER: ${{ steps.foundation.outputs.postgres_admin_login }}
           KEYVAULT_NAME: ${{ steps.foundation.outputs.key_vault_name }}
         run: bash scripts/cloud/postgres-bootstrap-noninteractive.sh
+
+      - name: Apply EF Core migrations
+        shell: bash
+        env:
+          KEYVAULT_NAME: ${{ steps.foundation.outputs.key_vault_name }}
+        run: bash scripts/cloud/run-ef-migrations.sh
 
       - name: Remove Service Bus default rules
         shell: bash
@@ -135,22 +146,43 @@ jobs:
             -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
             -var="image_tag=${{ github.sha }}"
 
+      - name: Sync Vercel frontend environment
+        if: inputs.apply_runtime == 'true' && env.VERCEL_API_TOKEN != ''
+        working-directory: infra/terraform/runtime
+        shell: bash
+        env:
+          VERCEL_PROJECT_NAME: realtime-pix-web
+        run: |
+          API_URL="$(terraform output -raw apim_api_url)"
+          PRESENCE_HUB_URL="$(terraform output -raw presence_hub_url)"
+          EVENTS_HUB_URL="$(terraform output -raw events_hub_url)"
+
+          cd ../../../apps/web
+          npx vercel link --yes --project "$VERCEL_PROJECT_NAME" --token "$VERCEL_API_TOKEN"
+
+          sync_env() {
+            local key="$1"
+            local value="$2"
+            local target="$3"
+
+            npx vercel env rm "$key" "$target" --yes --token "$VERCEL_API_TOKEN" >/dev/null 2>&1 || true
+            printf "%s" "$value" | npx vercel env add "$key" "$target" --token "$VERCEL_API_TOKEN"
+          }
+
+          for target in production preview; do
+            sync_env NEXT_PUBLIC_API_BASE_URL "$API_URL" "$target"
+            sync_env NEXT_PUBLIC_PRESENCE_HUB_URL "$PRESENCE_HUB_URL" "$target"
+            sync_env NEXT_PUBLIC_EVENTS_HUB_URL "$EVENTS_HUB_URL" "$target"
+          done
+
       - name: Smoke test
         if: inputs.apply_runtime == 'true'
         working-directory: infra/terraform/runtime
         shell: bash
         run: |
-          API_URL="$(terraform output -raw api_base_url)"
-          echo "Checking ${API_URL}/health"
-          curl \
-            --fail \
-            --show-error \
-            --retry 10 \
-            --retry-all-errors \
-            --retry-delay 10 \
-            --connect-timeout 10 \
-            --max-time 30 \
-            "${API_URL}/health"
+          API_URL="$(terraform output -raw apim_api_url)"
+          echo "Running cloud smoke tests against ${API_URL}"
+          API_BASE_URL="$API_URL" node ../../../scripts/cloud/smoke-e2e.mjs
 
       - name: Dump Container Apps diagnostics
         if: failure() && inputs.apply_runtime == 'true'

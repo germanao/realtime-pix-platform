@@ -22,7 +22,7 @@ jobs:
       - name: Build
         run: dotnet build RealtimePixPlatform.slnx --configuration Release --no-restore
       - name: Test
-        run: dotnet test RealtimePixPlatform.slnx --configuration Release --no-build --logger trx
+        run: dotnet test RealtimePixPlatform.slnx --configuration Release --no-build --logger trx -m:1
 
   frontend:
     name: Frontend build and tests

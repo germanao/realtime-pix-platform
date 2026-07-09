@@ -1,16 +1,43 @@
 using RealtimePix.Contracts;
 using RealtimePix.Eventing;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
+using Microsoft.EntityFrameworkCore;
 
 const string ServiceName = "transaction-service";
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddRealtimePixAzureAppConfiguration();
 builder.Services.AddCors();
-builder.Services.AddSingleton<TransferStore>();
-builder.Services.AddSingleton<IIntegrationEventHandler, PixTransferOutcomeHandler>();
+builder.Services.AddOpenTelemetry().UseAzureMonitor();
+
+var defaultConnectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(defaultConnectionString))
+{
+    builder.Services.AddSingleton<TransferStore>();
+    builder.Services.AddSingleton<ITransferStore>(serviceProvider =>
+        new InMemoryTransferStoreAdapter(serviceProvider.GetRequiredService<TransferStore>()));
+    builder.Services.AddSingleton<ITransactionalOperation, NoopTransactionalOperation>();
+    builder.Services.AddSingleton<IIntegrationEventHandler, PixTransferOutcomeHandler>();
+}
+else
+{
+    builder.Services.AddDbContext<TransactionDbContext>(options => options.UseNpgsql(defaultConnectionString));
+    builder.Services.AddScoped<ITransferStore, EfTransferStore>();
+    builder.Services.AddScoped<ITransactionalOperation, EfTransactionalOperation>();
+    builder.Services.AddScoped<IIntegrationEventHandler, PixTransferOutcomeHandler>();
+}
+
 builder.Services.AddRealtimePixEventBus(builder.Configuration, ServiceName);
+if (!string.IsNullOrWhiteSpace(defaultConnectionString))
+{
+    builder.Services.AddRealtimePixEfCoreEventing<TransactionDbContext>();
+}
 
 var app = builder.Build();
-app.UseCors(policy => policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin());
+app.UseCors(policy => policy
+    .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:3000"])
+    .AllowAnyHeader()
+    .AllowAnyMethod());
 
 app.MapGet("/health", () => Results.Ok(new { service = ServiceName, status = "ok" }));
 app.MapGet("/health/live", () => Results.Ok(new { service = ServiceName, status = "live" }));
@@ -18,8 +45,9 @@ app.MapGet("/health/ready", () => Results.Ok(new { service = ServiceName, status
 
 app.MapPost("/pix/transfers", async (
     PixTransferRequest request,
-    TransferStore store,
+    ITransferStore store,
     IIntegrationEventPublisher publisher,
+    ITransactionalOperation transactionalOperation,
     CancellationToken cancellationToken) =>
 {
     if (request.Amount <= 0)
@@ -27,31 +55,36 @@ app.MapPost("/pix/transfers", async (
         return Results.BadRequest(new { message = "Transfer amount must be positive." });
     }
 
-    var created = store.Create(request);
-    if (created.IsNew)
+    CreateTransferResult? created = null;
+    await transactionalOperation.ExecuteAsync(async innerCancellationToken =>
     {
-        await publisher.PublishAsync(
-            EventTypes.PixTransferRequested,
-            1,
-            ServiceName,
-            new PixTransferRequestedPayload(
-                created.Transfer.TransferId,
-                created.Transfer.IdempotencyKey,
-                created.Transfer.SenderUserId,
-                created.Transfer.SenderAccountId,
-                created.Transfer.RecipientUserId,
-                created.Transfer.RecipientAccountId,
-                created.Transfer.Amount),
-            correlationId: created.Transfer.TransferId,
-            cancellationToken: cancellationToken);
-    }
+        created = await store.CreateAsync(request, innerCancellationToken);
+        if (created.IsNew)
+        {
+            await publisher.PublishAsync(
+                EventTypes.PixTransferRequested,
+                1,
+                ServiceName,
+                new PixTransferRequestedPayload(
+                    created.Transfer.TransferId,
+                    created.Transfer.IdempotencyKey,
+                    created.Transfer.SenderUserId,
+                    created.Transfer.SenderAccountId,
+                    created.Transfer.RecipientUserId,
+                    created.Transfer.RecipientAccountId,
+                    created.Transfer.Amount),
+                correlationId: created.Transfer.TransferId,
+                cancellationToken: innerCancellationToken);
+        }
+    }, cancellationToken);
 
-    return Results.Accepted($"/pix/transfers/{created.Transfer.TransferId}", created.Transfer);
+    var response = created ?? throw new InvalidOperationException("Transfer creation did not produce a result.");
+    return Results.Accepted($"/pix/transfers/{response.Transfer.TransferId}", response.Transfer);
 });
 
-app.MapGet("/pix/transfers/{transferId}", (string transferId, TransferStore store) =>
+app.MapGet("/pix/transfers/{transferId}", async (string transferId, ITransferStore store, CancellationToken cancellationToken) =>
 {
-    var transfer = store.Get(transferId);
+    var transfer = await store.GetAsync(transferId, cancellationToken);
     return transfer is null ? Results.NotFound(new { message = "Transfer was not found." }) : Results.Ok(transfer);
 });
 
@@ -82,11 +115,90 @@ public sealed record CreateTransferResult(bool IsNew, TransferResponse Transfer)
 
 public sealed record TransferTransitionResult(bool Changed, TransferResponse? Transfer);
 
-public sealed class TransferStore
+public interface ITransferStore
+{
+    Task<CreateTransferResult> CreateAsync(PixTransferRequest request, CancellationToken cancellationToken);
+
+    Task<TransferResponse?> GetAsync(string transferId, CancellationToken cancellationToken);
+
+    Task<TransferTransitionResult> TryMarkDebitedAsync(string transferId, CancellationToken cancellationToken);
+
+    Task<TransferTransitionResult> TryCompleteAsync(string transferId, CancellationToken cancellationToken);
+
+    Task<TransferTransitionResult> TryFailAsync(string transferId, string reason, CancellationToken cancellationToken);
+}
+
+public interface ITransactionalOperation
+{
+    Task ExecuteAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken);
+}
+
+public sealed class NoopTransactionalOperation : ITransactionalOperation
+{
+    public Task ExecuteAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
+    {
+        return operation(cancellationToken);
+    }
+}
+
+public sealed class InMemoryTransferStoreAdapter(TransferStore inner) : ITransferStore
+{
+    public Task<CreateTransferResult> CreateAsync(PixTransferRequest request, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.Create(request));
+    }
+
+    public Task<TransferResponse?> GetAsync(string transferId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.Get(transferId));
+    }
+
+    public Task<TransferTransitionResult> TryMarkDebitedAsync(string transferId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.TryMarkDebited(transferId));
+    }
+
+    public Task<TransferTransitionResult> TryCompleteAsync(string transferId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.TryComplete(transferId));
+    }
+
+    public Task<TransferTransitionResult> TryFailAsync(string transferId, string reason, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.TryFail(transferId, reason));
+    }
+}
+
+public sealed class TransferStore : ITransferStore
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, TransferState> _transfers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _idempotencyIndex = new(StringComparer.OrdinalIgnoreCase);
+
+    public Task<CreateTransferResult> CreateAsync(PixTransferRequest request, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(Create(request));
+    }
+
+    public Task<TransferResponse?> GetAsync(string transferId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(Get(transferId));
+    }
+
+    public Task<TransferTransitionResult> TryMarkDebitedAsync(string transferId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(TryMarkDebited(transferId));
+    }
+
+    public Task<TransferTransitionResult> TryCompleteAsync(string transferId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(TryComplete(transferId));
+    }
+
+    public Task<TransferTransitionResult> TryFailAsync(string transferId, string reason, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(TryFail(transferId, reason));
+    }
 
     public CreateTransferResult Create(PixTransferRequest request)
     {
@@ -256,8 +368,9 @@ public static class TransactionServiceMetadata
 }
 
 public sealed class PixTransferOutcomeHandler(
-    TransferStore store,
-    IIntegrationEventPublisher publisher) : IIntegrationEventHandler
+    ITransferStore store,
+    IIntegrationEventPublisher publisher,
+    ITransactionalOperation transactionalOperation) : IIntegrationEventHandler
 {
     public IReadOnlyCollection<string> EventTypes { get; } =
     [
@@ -268,50 +381,53 @@ public sealed class PixTransferOutcomeHandler(
 
     public async Task HandleAsync(EventEnvelope envelope, CancellationToken cancellationToken)
     {
-        switch (envelope.EventType)
+        await transactionalOperation.ExecuteAsync(async innerCancellationToken =>
         {
-            case RealtimePix.Contracts.EventTypes.PixDebitSucceeded:
+            switch (envelope.EventType)
             {
-                var payload = envelope.DeserializePayload<PixDebitSucceededPayload>();
-                store.TryMarkDebited(payload.TransferId);
-                break;
-            }
-            case RealtimePix.Contracts.EventTypes.PixDebitFailed:
-            {
-                var payload = envelope.DeserializePayload<PixDebitFailedPayload>();
-                var failed = store.TryFail(payload.TransferId, payload.Reason);
-                if (failed.Changed && failed.Transfer is not null)
+                case RealtimePix.Contracts.EventTypes.PixDebitSucceeded:
                 {
-                    await publisher.PublishAsync(
-                        RealtimePix.Contracts.EventTypes.PixTransferFailed,
-                        1,
-                        TransactionServiceMetadata.Name,
-                        new PixTransferFailedPayload(failed.Transfer.TransferId, failed.Transfer.SenderUserId, failed.Transfer.RecipientUserId, failed.Transfer.Amount, payload.Reason, DateTimeOffset.UtcNow),
-                        correlationId: envelope.CorrelationId,
-                        causationId: envelope.EventId.ToString("N"),
-                        cancellationToken: cancellationToken);
+                    var payload = envelope.DeserializePayload<PixDebitSucceededPayload>();
+                    await store.TryMarkDebitedAsync(payload.TransferId, innerCancellationToken);
+                    break;
                 }
-
-                break;
-            }
-            case RealtimePix.Contracts.EventTypes.PixCreditSucceeded:
-            {
-                var payload = envelope.DeserializePayload<PixCreditSucceededPayload>();
-                var completed = store.TryComplete(payload.TransferId);
-                if (completed.Changed && completed.Transfer is not null)
+                case RealtimePix.Contracts.EventTypes.PixDebitFailed:
                 {
-                    await publisher.PublishAsync(
-                        RealtimePix.Contracts.EventTypes.PixTransferCompleted,
-                        1,
-                        TransactionServiceMetadata.Name,
-                        new PixTransferCompletedPayload(completed.Transfer.TransferId, completed.Transfer.SenderUserId, completed.Transfer.RecipientUserId, completed.Transfer.Amount, DateTimeOffset.UtcNow),
-                        correlationId: envelope.CorrelationId,
-                        causationId: envelope.EventId.ToString("N"),
-                        cancellationToken: cancellationToken);
-                }
+                    var payload = envelope.DeserializePayload<PixDebitFailedPayload>();
+                    var failed = await store.TryFailAsync(payload.TransferId, payload.Reason, innerCancellationToken);
+                    if (failed.Changed && failed.Transfer is not null)
+                    {
+                        await publisher.PublishAsync(
+                            RealtimePix.Contracts.EventTypes.PixTransferFailed,
+                            1,
+                            TransactionServiceMetadata.Name,
+                            new PixTransferFailedPayload(failed.Transfer.TransferId, failed.Transfer.SenderUserId, failed.Transfer.RecipientUserId, failed.Transfer.Amount, payload.Reason, DateTimeOffset.UtcNow),
+                            correlationId: envelope.CorrelationId,
+                            causationId: envelope.EventId.ToString("N"),
+                            cancellationToken: innerCancellationToken);
+                    }
 
-                break;
+                    break;
+                }
+                case RealtimePix.Contracts.EventTypes.PixCreditSucceeded:
+                {
+                    var payload = envelope.DeserializePayload<PixCreditSucceededPayload>();
+                    var completed = await store.TryCompleteAsync(payload.TransferId, innerCancellationToken);
+                    if (completed.Changed && completed.Transfer is not null)
+                    {
+                        await publisher.PublishAsync(
+                            RealtimePix.Contracts.EventTypes.PixTransferCompleted,
+                            1,
+                            TransactionServiceMetadata.Name,
+                            new PixTransferCompletedPayload(completed.Transfer.TransferId, completed.Transfer.SenderUserId, completed.Transfer.RecipientUserId, completed.Transfer.Amount, DateTimeOffset.UtcNow),
+                            correlationId: envelope.CorrelationId,
+                            causationId: envelope.EventId.ToString("N"),
+                            cancellationToken: innerCancellationToken);
+                    }
+
+                    break;
+                }
             }
-        }
+        }, cancellationToken);
     }
 }

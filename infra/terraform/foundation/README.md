@@ -34,5 +34,7 @@ terraform apply \
   -var="publisher_email=you@example.com"
 ```
 
-After foundation, run `scripts/cloud/postgres-bootstrap.sh` and
-`scripts/cloud/remove-servicebus-default-rules.sh`.
+After foundation, run `scripts/cloud/postgres-bootstrap-noninteractive.sh`,
+then `scripts/cloud/run-ef-migrations.sh`, then
+`scripts/cloud/remove-servicebus-default-rules.sh`. The GitHub deploy workflow
+does this automatically after it opens the temporary PostgreSQL firewall rule.

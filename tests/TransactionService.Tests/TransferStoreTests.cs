@@ -25,7 +25,7 @@ public sealed class TransferStoreTests
         var store = new global::TransferStore();
         var transfer = store.Create(CreateRequest("idempotency-1")).Transfer;
         var publisher = new RecordingPublisher();
-        var handler = new global::PixTransferOutcomeHandler(store, publisher);
+        var handler = new global::PixTransferOutcomeHandler(store, publisher, new global::NoopTransactionalOperation());
         var payload = new PixCreditSucceededPayload(
             transfer.TransferId,
             transfer.RecipientUserId,
@@ -47,7 +47,7 @@ public sealed class TransferStoreTests
         var store = new global::TransferStore();
         var transfer = store.Create(CreateRequest("idempotency-1")).Transfer;
         var publisher = new RecordingPublisher();
-        var handler = new global::PixTransferOutcomeHandler(store, publisher);
+        var handler = new global::PixTransferOutcomeHandler(store, publisher, new global::NoopTransactionalOperation());
         var payload = new PixDebitFailedPayload(
             transfer.TransferId,
             transfer.SenderUserId,

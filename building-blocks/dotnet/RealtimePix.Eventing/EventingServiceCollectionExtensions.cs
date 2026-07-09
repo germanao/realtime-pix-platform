@@ -56,7 +56,9 @@ public static class EventingServiceCollectionExtensions
             var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ServiceBusEventBusOptions>>().Value;
             return ServiceBusClientFactory.Create(options);
         });
-        services.AddSingleton<IIntegrationEventPublisher, ServiceBusIntegrationEventPublisher>();
+        services.AddSingleton<ServiceBusIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
+            serviceProvider.GetRequiredService<ServiceBusIntegrationEventPublisher>());
 
         if (!string.IsNullOrWhiteSpace(ResolveSubscriptionName(consumerName)))
         {

@@ -238,7 +238,7 @@ Terraform. After runtime applies, read the public URLs:
 
 ```bash
 cd infra/terraform/runtime
-terraform output -raw api_base_url
+terraform output -raw apim_api_url
 terraform output -raw presence_hub_url
 terraform output -raw events_hub_url
 ```
@@ -269,7 +269,7 @@ gh workflow run deploy-poc.yml \
 ## 13. Validation
 
 ```bash
-API_URL="$(terraform output -raw api_base_url)"
+API_URL="$(terraform output -raw apim_api_url)"
 curl --fail "$API_URL/health"
 curl --fail "$API_URL/presence/users"
 ```

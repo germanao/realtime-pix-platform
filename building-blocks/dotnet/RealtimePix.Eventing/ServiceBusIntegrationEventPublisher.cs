@@ -34,6 +34,11 @@ public sealed class ServiceBusIntegrationEventPublisher(
             producer,
             JsonSerializer.SerializeToElement(payload, JsonDefaults.Options));
 
+        await PublishEnvelopeAsync(envelope, cancellationToken);
+    }
+
+    public async Task PublishEnvelopeAsync(EventEnvelope envelope, CancellationToken cancellationToken = default)
+    {
         var json = JsonSerializer.Serialize(envelope, JsonDefaults.Options);
         var message = new ServiceBusMessage(BinaryData.FromString(json))
         {
@@ -52,7 +57,7 @@ public sealed class ServiceBusIntegrationEventPublisher(
         }
 
         await _sender.SendMessageAsync(message, cancellationToken);
-        logger.LogInformation("Published Service Bus integration event {EventType} {EventId}", eventType, envelope.EventId);
+        logger.LogInformation("Published Service Bus integration event {EventType} {EventId}", envelope.EventType, envelope.EventId);
     }
 
     public async ValueTask DisposeAsync()

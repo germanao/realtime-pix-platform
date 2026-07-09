@@ -39,7 +39,7 @@ variable "app_config_label" {
 variable "allowed_cors_origins" {
   description = "CORS origins allowed by public services."
   type        = list(string)
-  default     = ["http://localhost:3000", "https://realtime-pix-web.vercel.app"]
+  default     = ["http://localhost:3000", "https://realtime-pix-web.vercel.app", "https://realtime-pix-web*.vercel.app"]
 }
 
 variable "tags" {

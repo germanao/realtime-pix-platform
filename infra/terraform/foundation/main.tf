@@ -20,6 +20,8 @@ resource "random_id" "app_configuration_suffix" {
   byte_length = 4
 }
 
+resource "random_uuid" "workbook" {}
+
 resource "random_password" "postgres_admin" {
   length           = 24
   special          = true
@@ -67,6 +69,101 @@ resource "azurerm_application_insights" "main" {
   tags                = local.common_tags
 }
 
+resource "azurerm_application_insights_workbook" "showcase" {
+  name                = random_uuid.workbook.result
+  resource_group_name = data.azurerm_resource_group.app.name
+  location            = var.location
+  display_name        = "Realtime PIX Showcase"
+  tags                = local.common_tags
+
+  data_json = jsonencode({
+    version = "Notebook/1.0"
+    items = [
+      {
+        type = 1
+        name = "title"
+        content = {
+          json = "# Realtime PIX Platform\nOperational view for API health, event flow, failures, and capacity."
+        }
+      },
+      {
+        type = 3
+        name = "requests"
+        content = {
+          version      = "KqlItem/1.0"
+          title        = "HTTP requests by service"
+          queryType    = 0
+          resourceType = "microsoft.insights/components"
+          query        = "requests | summarize Requests=count(), Failed=countif(success == false) by cloud_RoleName, bin(timestamp, 5m) | order by timestamp desc"
+          size         = 0
+        }
+      },
+      {
+        type = 3
+        name = "failed-transfers"
+        content = {
+          version      = "KqlItem/1.0"
+          title        = "Failed transfer events"
+          queryType    = 0
+          resourceType = "microsoft.insights/components"
+          query        = "traces | where message has 'PixTransferFailed' or message has 'Debit failed' | summarize Count=count() by bin(timestamp, 5m), cloud_RoleName"
+          size         = 0
+        }
+      },
+      {
+        type = 3
+        name = "outbox-failures"
+        content = {
+          version      = "KqlItem/1.0"
+          title        = "Outbox publish failures"
+          queryType    = 0
+          resourceType = "microsoft.insights/components"
+          query        = "traces | where message has 'outbox' and severityLevel >= 2 | project timestamp, cloud_RoleName, message"
+          size         = 0
+        }
+      }
+    ]
+    styleSettings = {}
+  })
+}
+
+resource "azurerm_monitor_action_group" "showcase" {
+  name                = "ag-${var.project_name}-${var.environment_name}-${local.suffix}"
+  resource_group_name = data.azurerm_resource_group.app.name
+  short_name          = "rtpix"
+  tags                = local.common_tags
+
+  email_receiver {
+    name                    = "publisher"
+    email_address           = var.publisher_email
+    use_common_alert_schema = true
+  }
+}
+
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "outbox_failures" {
+  name                 = "alert-${var.project_name}-${var.environment_name}-outbox-failures-${local.suffix}"
+  resource_group_name  = data.azurerm_resource_group.app.name
+  location             = var.location
+  scopes               = [azurerm_log_analytics_workspace.main.id]
+  description          = "Outbox dispatcher failures were detected in application logs."
+  severity             = 2
+  enabled              = true
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT15M"
+  tags                 = local.common_tags
+
+  criteria {
+    query                   = "AppTraces | where Message has 'outbox' and SeverityLevel >= 2"
+    time_aggregation_method = "Count"
+    operator                = "GreaterThan"
+    threshold               = 0
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.showcase.id]
+  }
+}
+
 resource "azurerm_container_registry" "main" {
   name                = "acrrealtimepix${local.suffix}"
   resource_group_name = data.azurerm_resource_group.app.name
@@ -112,6 +209,29 @@ resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure_service
   end_ip_address   = "0.0.0.0"
 }
 
+resource "azurerm_monitor_metric_alert" "postgres_storage_pressure" {
+  name                = "alert-${var.project_name}-${var.environment_name}-postgres-storage-${local.suffix}"
+  resource_group_name = data.azurerm_resource_group.app.name
+  scopes              = [azurerm_postgresql_flexible_server.main.id]
+  description         = "PostgreSQL storage usage is above the POC threshold."
+  severity            = 2
+  frequency           = "PT15M"
+  window_size         = "PT30M"
+  tags                = local.common_tags
+
+  criteria {
+    metric_namespace = "Microsoft.DBforPostgreSQL/flexibleServers"
+    metric_name      = "storage_percent"
+    aggregation      = "Average"
+    operator         = "GreaterThan"
+    threshold        = 80
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.showcase.id
+  }
+}
+
 resource "azurerm_postgresql_flexible_server_database" "service_databases" {
   for_each  = local.database_names
   name      = each.value
@@ -154,6 +274,29 @@ resource "azurerm_servicebus_subscription_rule" "consumer_filters" {
   subscription_id = azurerm_servicebus_subscription.consumers[each.key].id
   filter_type     = "SqlFilter"
   sql_filter      = each.value
+}
+
+resource "azurerm_monitor_metric_alert" "servicebus_dead_letters" {
+  name                = "alert-${var.project_name}-${var.environment_name}-servicebus-deadletters-${local.suffix}"
+  resource_group_name = data.azurerm_resource_group.app.name
+  scopes              = [azurerm_servicebus_namespace.main.id]
+  description         = "Service Bus dead-lettered messages were detected."
+  severity            = 2
+  frequency           = "PT5M"
+  window_size         = "PT15M"
+  tags                = local.common_tags
+
+  criteria {
+    metric_namespace = "Microsoft.ServiceBus/namespaces"
+    metric_name      = "DeadletteredMessages"
+    aggregation      = "Total"
+    operator         = "GreaterThan"
+    threshold        = 0
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.showcase.id
+  }
 }
 
 resource "azurerm_signalr_service" "main" {
@@ -246,6 +389,35 @@ resource "azurerm_api_management" "main" {
   publisher_email     = var.publisher_email
   sku_name            = "Consumption_0"
   tags                = local.common_tags
+}
+
+resource "azurerm_monitor_metric_alert" "apim_failed_requests" {
+  name                = "alert-${var.project_name}-${var.environment_name}-apim-5xx-${local.suffix}"
+  resource_group_name = data.azurerm_resource_group.app.name
+  scopes              = [azurerm_api_management.main.id]
+  description         = "APIM returned failed requests above the POC threshold."
+  severity            = 2
+  frequency           = "PT5M"
+  window_size         = "PT15M"
+  tags                = local.common_tags
+
+  criteria {
+    metric_namespace = "Microsoft.ApiManagement/service"
+    metric_name      = "Requests"
+    aggregation      = "Total"
+    operator         = "GreaterThan"
+    threshold        = 5
+
+    dimension {
+      name     = "ResponseCode"
+      operator = "Include"
+      values   = ["5xx"]
+    }
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.showcase.id
+  }
 }
 
 resource "azurerm_notification_hub_namespace" "main" {

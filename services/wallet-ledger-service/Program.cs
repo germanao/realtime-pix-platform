@@ -1,16 +1,43 @@
 using RealtimePix.Contracts;
 using RealtimePix.Eventing;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
+using Microsoft.EntityFrameworkCore;
 
 const string ServiceName = "wallet-ledger-service";
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddRealtimePixAzureAppConfiguration();
 builder.Services.AddCors();
-builder.Services.AddSingleton<WalletLedgerStore>();
-builder.Services.AddSingleton<IIntegrationEventHandler, PixTransferRequestedHandler>();
+builder.Services.AddOpenTelemetry().UseAzureMonitor();
+
+var defaultConnectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(defaultConnectionString))
+{
+    builder.Services.AddSingleton<WalletLedgerStore>();
+    builder.Services.AddSingleton<IWalletLedgerStore>(serviceProvider =>
+        new InMemoryWalletLedgerStoreAdapter(serviceProvider.GetRequiredService<WalletLedgerStore>()));
+    builder.Services.AddSingleton<ITransactionalOperation, NoopTransactionalOperation>();
+    builder.Services.AddSingleton<IIntegrationEventHandler, PixTransferRequestedHandler>();
+}
+else
+{
+    builder.Services.AddDbContext<WalletLedgerDbContext>(options => options.UseNpgsql(defaultConnectionString));
+    builder.Services.AddScoped<IWalletLedgerStore, EfWalletLedgerStore>();
+    builder.Services.AddScoped<ITransactionalOperation, EfTransactionalOperation>();
+    builder.Services.AddScoped<IIntegrationEventHandler, PixTransferRequestedHandler>();
+}
+
 builder.Services.AddRealtimePixEventBus(builder.Configuration, ServiceName);
+if (!string.IsNullOrWhiteSpace(defaultConnectionString))
+{
+    builder.Services.AddRealtimePixEfCoreEventing<WalletLedgerDbContext>();
+}
 
 var app = builder.Build();
-app.UseCors(policy => policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin());
+app.UseCors(policy => policy
+    .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:3000"])
+    .AllowAnyHeader()
+    .AllowAnyMethod());
 
 app.MapGet("/health", () => Results.Ok(new { service = ServiceName, status = "ok" }));
 app.MapGet("/health/live", () => Results.Ok(new { service = ServiceName, status = "live" }));
@@ -18,68 +45,81 @@ app.MapGet("/health/ready", () => Results.Ok(new { service = ServiceName, status
 
 app.MapPost("/wallet/users/{userId}/bootstrap", async (
     string userId,
-    WalletLedgerStore store,
+    IWalletLedgerStore store,
     IIntegrationEventPublisher publisher,
+    ITransactionalOperation transactionalOperation,
     CancellationToken cancellationToken) =>
 {
-    var result = store.Bootstrap(userId);
-    foreach (var account in result.CreatedAccounts)
+    WalletBootstrapResult? result = null;
+    await transactionalOperation.ExecuteAsync(async innerCancellationToken =>
     {
-        await publisher.PublishAsync(
-            EventTypes.AccountCreated,
-            1,
-            ServiceName,
-            new AccountCreatedPayload(account.AccountId, account.UserId, account.BankName, account.Balance),
-            correlationId: account.UserId,
-            cancellationToken: cancellationToken);
-    }
+        result = await store.BootstrapAsync(userId, innerCancellationToken);
+        foreach (var account in result.CreatedAccounts)
+        {
+            await publisher.PublishAsync(
+                EventTypes.AccountCreated,
+                1,
+                ServiceName,
+                new AccountCreatedPayload(account.AccountId, account.UserId, account.BankName, account.Balance),
+                correlationId: account.UserId,
+                cancellationToken: innerCancellationToken);
+        }
 
-    if (result.WelcomeEntry is not null)
-    {
-        await publisher.PublishAsync(
-            EventTypes.FundsDeposited,
-            1,
-            ServiceName,
-            new FundsDepositedPayload(
-                result.WelcomeEntry.LedgerEntryId,
-                result.WelcomeEntry.AccountId,
-                result.WelcomeEntry.UserId,
-                result.WelcomeEntry.Amount,
-                result.WelcomeEntry.BalanceAfter,
-                result.WelcomeEntry.Description),
-            correlationId: userId,
-            cancellationToken: cancellationToken);
-    }
+        if (result.WelcomeEntry is not null)
+        {
+            await publisher.PublishAsync(
+                EventTypes.FundsDeposited,
+                1,
+                ServiceName,
+                new FundsDepositedPayload(
+                    result.WelcomeEntry.LedgerEntryId,
+                    result.WelcomeEntry.AccountId,
+                    result.WelcomeEntry.UserId,
+                    result.WelcomeEntry.Amount,
+                    result.WelcomeEntry.BalanceAfter,
+                    result.WelcomeEntry.Description),
+                correlationId: userId,
+                cancellationToken: innerCancellationToken);
+        }
+    }, cancellationToken);
 
-    return Results.Ok(new WalletBootstrapResponse(result.PrimaryAccount, result.WelcomeCreditApplied));
+    var response = result ?? throw new InvalidOperationException("Wallet bootstrap did not produce a result.");
+    return Results.Ok(new WalletBootstrapResponse(response.PrimaryAccount, response.WelcomeCreditApplied));
 });
 
 app.MapGet("/wallet/accounts", async (
     string userId,
-    WalletLedgerStore store,
+    IWalletLedgerStore store,
     IIntegrationEventPublisher publisher,
+    ITransactionalOperation transactionalOperation,
     CancellationToken cancellationToken) =>
 {
-    var result = store.EnsureAccounts(userId);
-    foreach (var account in result.CreatedAccounts)
+    AccountEnsureResult? result = null;
+    await transactionalOperation.ExecuteAsync(async innerCancellationToken =>
     {
-        await publisher.PublishAsync(
-            EventTypes.AccountCreated,
-            1,
-            ServiceName,
-            new AccountCreatedPayload(account.AccountId, account.UserId, account.BankName, account.Balance),
-            correlationId: account.UserId,
-            cancellationToken: cancellationToken);
-    }
+        result = await store.EnsureAccountsAsync(userId, innerCancellationToken);
+        foreach (var account in result.CreatedAccounts)
+        {
+            await publisher.PublishAsync(
+                EventTypes.AccountCreated,
+                1,
+                ServiceName,
+                new AccountCreatedPayload(account.AccountId, account.UserId, account.BankName, account.Balance),
+                correlationId: account.UserId,
+                cancellationToken: innerCancellationToken);
+        }
+    }, cancellationToken);
 
-    return Results.Ok(result.Accounts);
+    var response = result ?? throw new InvalidOperationException("Wallet account lookup did not produce a result.");
+    return Results.Ok(response.Accounts);
 });
 
 app.MapPost("/wallet/accounts/{accountId}/deposit", async (
     string accountId,
     DepositRequest request,
-    WalletLedgerStore store,
+    IWalletLedgerStore store,
     IIntegrationEventPublisher publisher,
+    ITransactionalOperation transactionalOperation,
     CancellationToken cancellationToken) =>
 {
     if (request.Amount <= 0)
@@ -87,35 +127,45 @@ app.MapPost("/wallet/accounts/{accountId}/deposit", async (
         return Results.BadRequest(new { message = "Deposit amount must be positive." });
     }
 
-    var result = store.Deposit(accountId, request.UserId, request.Amount, request.Reason ?? "Manual demo deposit");
+    DepositResult? result = null;
+    await transactionalOperation.ExecuteAsync(async innerCancellationToken =>
+    {
+        result = await store.DepositAsync(accountId, request.UserId, request.Amount, request.Reason ?? "Manual demo deposit", innerCancellationToken);
+        if (result is null)
+        {
+            return;
+        }
+
+        await publisher.PublishAsync(
+            EventTypes.FundsDeposited,
+            1,
+            ServiceName,
+            new FundsDepositedPayload(
+                result.Entry.LedgerEntryId,
+                result.Entry.AccountId,
+                result.Entry.UserId,
+                result.Entry.Amount,
+                result.NewBalance,
+                result.Entry.Description),
+            correlationId: result.Entry.UserId,
+            cancellationToken: innerCancellationToken);
+    }, cancellationToken);
+
     if (result is null)
     {
         return Results.NotFound(new { message = "Account was not found for this user." });
     }
 
-    await publisher.PublishAsync(
-        EventTypes.FundsDeposited,
-        1,
-        ServiceName,
-        new FundsDepositedPayload(
-            result.Entry.LedgerEntryId,
-            result.Entry.AccountId,
-            result.Entry.UserId,
-            result.Entry.Amount,
-            result.NewBalance,
-            result.Entry.Description),
-        correlationId: result.Entry.UserId,
-        cancellationToken: cancellationToken);
-
     return Results.Ok(result);
 });
 
-app.MapGet("/wallet/accounts/{accountId}/transactions", (
+app.MapGet("/wallet/accounts/{accountId}/transactions", async (
     string accountId,
     string userId,
-    WalletLedgerStore store) =>
+    IWalletLedgerStore store,
+    CancellationToken cancellationToken) =>
 {
-    var entries = store.GetEntries(accountId, userId);
+    var entries = await store.GetEntriesAsync(accountId, userId, cancellationToken);
     return entries is null ? Results.NotFound(new { message = "Account was not found for this user." }) : Results.Ok(entries);
 });
 
@@ -154,7 +204,61 @@ public sealed record DebitResult(bool Succeeded, string? Reason, string AccountI
 
 public sealed record TransferLedgerResult(bool IsDuplicate, DebitResult Debit, decimal? RecipientBalance);
 
-public sealed class WalletLedgerStore
+public interface IWalletLedgerStore
+{
+    Task<WalletBootstrapResult> BootstrapAsync(string userId, CancellationToken cancellationToken);
+
+    Task<AccountEnsureResult> EnsureAccountsAsync(string userId, CancellationToken cancellationToken);
+
+    Task<DepositResult?> DepositAsync(string accountId, string userId, decimal amount, string reason, CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<LedgerEntryResponse>?> GetEntriesAsync(string accountId, string userId, CancellationToken cancellationToken);
+
+    Task<TransferLedgerResult> ApplyTransferAsync(PixTransferRequestedPayload transfer, CancellationToken cancellationToken);
+}
+
+public interface ITransactionalOperation
+{
+    Task ExecuteAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken);
+}
+
+public sealed class NoopTransactionalOperation : ITransactionalOperation
+{
+    public Task ExecuteAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
+    {
+        return operation(cancellationToken);
+    }
+}
+
+public sealed class InMemoryWalletLedgerStoreAdapter(WalletLedgerStore inner) : IWalletLedgerStore
+{
+    public Task<WalletBootstrapResult> BootstrapAsync(string userId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.Bootstrap(userId));
+    }
+
+    public Task<AccountEnsureResult> EnsureAccountsAsync(string userId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.EnsureAccounts(userId));
+    }
+
+    public Task<DepositResult?> DepositAsync(string accountId, string userId, decimal amount, string reason, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.Deposit(accountId, userId, amount, reason));
+    }
+
+    public Task<IReadOnlyCollection<LedgerEntryResponse>?> GetEntriesAsync(string accountId, string userId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.GetEntries(accountId, userId));
+    }
+
+    public Task<TransferLedgerResult> ApplyTransferAsync(PixTransferRequestedPayload transfer, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.ApplyTransfer(transfer));
+    }
+}
+
+public sealed class WalletLedgerStore : IWalletLedgerStore
 {
     public const decimal WelcomeBalance = 10_000m;
     public const string PrimaryBankName = "Bank A";
@@ -164,6 +268,31 @@ public sealed class WalletLedgerStore
     private readonly Dictionary<string, List<LedgerEntryResponse>> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _processedTransferIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _welcomeGrantedUsers = new(StringComparer.OrdinalIgnoreCase);
+
+    public Task<WalletBootstrapResult> BootstrapAsync(string userId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(Bootstrap(userId));
+    }
+
+    public Task<AccountEnsureResult> EnsureAccountsAsync(string userId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(EnsureAccounts(userId));
+    }
+
+    public Task<DepositResult?> DepositAsync(string accountId, string userId, decimal amount, string reason, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(Deposit(accountId, userId, amount, reason));
+    }
+
+    public Task<IReadOnlyCollection<LedgerEntryResponse>?> GetEntriesAsync(string accountId, string userId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(GetEntries(accountId, userId));
+    }
+
+    public Task<TransferLedgerResult> ApplyTransferAsync(PixTransferRequestedPayload transfer, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(ApplyTransfer(transfer));
+    }
 
     public WalletBootstrapResult Bootstrap(string userId)
     {
@@ -410,50 +539,54 @@ public sealed class WalletLedgerStore
 }
 
 public sealed class PixTransferRequestedHandler(
-    WalletLedgerStore store,
-    IIntegrationEventPublisher publisher) : IIntegrationEventHandler
+    IWalletLedgerStore store,
+    IIntegrationEventPublisher publisher,
+    ITransactionalOperation transactionalOperation) : IIntegrationEventHandler
 {
     public IReadOnlyCollection<string> EventTypes { get; } = [RealtimePix.Contracts.EventTypes.PixTransferRequested];
 
     public async Task HandleAsync(EventEnvelope envelope, CancellationToken cancellationToken)
     {
-        var transfer = envelope.DeserializePayload<PixTransferRequestedPayload>();
-        var result = store.ApplyTransfer(transfer);
-        if (result.IsDuplicate)
+        await transactionalOperation.ExecuteAsync(async innerCancellationToken =>
         {
-            return;
-        }
+            var transfer = envelope.DeserializePayload<PixTransferRequestedPayload>();
+            var result = await store.ApplyTransferAsync(transfer, innerCancellationToken);
+            if (result.IsDuplicate)
+            {
+                return;
+            }
 
-        if (!result.Debit.Succeeded)
-        {
+            if (!result.Debit.Succeeded)
+            {
+                await publisher.PublishAsync(
+                    RealtimePix.Contracts.EventTypes.PixDebitFailed,
+                    1,
+                    WalletLedgerServiceMetadata.Name,
+                    new PixDebitFailedPayload(transfer.TransferId, transfer.SenderUserId, transfer.SenderAccountId, transfer.Amount, result.Debit.Reason ?? "Debit failed."),
+                    correlationId: envelope.CorrelationId,
+                    causationId: envelope.EventId.ToString("N"),
+                    cancellationToken: innerCancellationToken);
+                return;
+            }
+
             await publisher.PublishAsync(
-                RealtimePix.Contracts.EventTypes.PixDebitFailed,
+                RealtimePix.Contracts.EventTypes.PixDebitSucceeded,
                 1,
                 WalletLedgerServiceMetadata.Name,
-                new PixDebitFailedPayload(transfer.TransferId, transfer.SenderUserId, transfer.SenderAccountId, transfer.Amount, result.Debit.Reason ?? "Debit failed."),
+                new PixDebitSucceededPayload(transfer.TransferId, transfer.SenderUserId, transfer.SenderAccountId, transfer.Amount, result.Debit.NewBalance),
                 correlationId: envelope.CorrelationId,
                 causationId: envelope.EventId.ToString("N"),
-                cancellationToken: cancellationToken);
-            return;
-        }
+                cancellationToken: innerCancellationToken);
 
-        await publisher.PublishAsync(
-            RealtimePix.Contracts.EventTypes.PixDebitSucceeded,
-            1,
-            WalletLedgerServiceMetadata.Name,
-            new PixDebitSucceededPayload(transfer.TransferId, transfer.SenderUserId, transfer.SenderAccountId, transfer.Amount, result.Debit.NewBalance),
-            correlationId: envelope.CorrelationId,
-            causationId: envelope.EventId.ToString("N"),
-            cancellationToken: cancellationToken);
-
-        await publisher.PublishAsync(
-            RealtimePix.Contracts.EventTypes.PixCreditSucceeded,
-            1,
-            WalletLedgerServiceMetadata.Name,
-            new PixCreditSucceededPayload(transfer.TransferId, transfer.RecipientUserId, transfer.RecipientAccountId, transfer.Amount, result.RecipientBalance ?? 0m),
-            correlationId: envelope.CorrelationId,
-            causationId: envelope.EventId.ToString("N"),
-            cancellationToken: cancellationToken);
+            await publisher.PublishAsync(
+                RealtimePix.Contracts.EventTypes.PixCreditSucceeded,
+                1,
+                WalletLedgerServiceMetadata.Name,
+                new PixCreditSucceededPayload(transfer.TransferId, transfer.RecipientUserId, transfer.RecipientAccountId, transfer.Amount, result.RecipientBalance ?? 0m),
+                correlationId: envelope.CorrelationId,
+                causationId: envelope.EventId.ToString("N"),
+                cancellationToken: innerCancellationToken);
+        }, cancellationToken);
     }
 }
 

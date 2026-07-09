@@ -27,6 +27,6 @@ terraform apply \
 The frontend is hosted separately in Vercel. After this stack applies, use the
 runtime outputs to configure these Vercel environment variables:
 
-- `NEXT_PUBLIC_API_BASE_URL` from `terraform output -raw api_base_url`
+- `NEXT_PUBLIC_API_BASE_URL` from `terraform output -raw apim_api_url`
 - `NEXT_PUBLIC_PRESENCE_HUB_URL` from `terraform output -raw presence_hub_url`
 - `NEXT_PUBLIC_EVENTS_HUB_URL` from `terraform output -raw events_hub_url`

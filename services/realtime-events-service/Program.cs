@@ -1,19 +1,23 @@
 using System.Text.Json;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using RealtimePix.Contracts;
 using RealtimePix.Eventing;
 
 const string ServiceName = "realtime-events-service";
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddRealtimePixAzureAppConfiguration();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("browser", policy =>
-        policy.SetIsOriginAllowed(_ => true)
+        policy.SetIsOriginAllowed(origin => CorsOrigins.IsAllowed(origin, builder.Configuration))
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials());
 });
+builder.Services.AddOpenTelemetry().UseAzureMonitor();
 var signalRBuilder = builder.Services.AddSignalR();
 var azureSignalRConnectionString = builder.Configuration["AzureSignalR:ConnectionString"];
 if (!string.IsNullOrWhiteSpace(azureSignalRConnectionString))
@@ -21,9 +25,26 @@ if (!string.IsNullOrWhiteSpace(azureSignalRConnectionString))
     signalRBuilder.AddAzureSignalR(azureSignalRConnectionString);
 }
 
-builder.Services.AddSingleton<RealtimeProjectionStore>();
-builder.Services.AddSingleton<IIntegrationEventHandler, PlatformEventProjectionHandler>();
+var defaultConnectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(defaultConnectionString))
+{
+    builder.Services.AddSingleton<RealtimeProjectionStore>();
+    builder.Services.AddSingleton<IRealtimeProjectionStore>(serviceProvider =>
+        new InMemoryRealtimeProjectionStoreAdapter(serviceProvider.GetRequiredService<RealtimeProjectionStore>()));
+    builder.Services.AddSingleton<IIntegrationEventHandler, PlatformEventProjectionHandler>();
+}
+else
+{
+    builder.Services.AddDbContext<RealtimeProjectionDbContext>(options => options.UseNpgsql(defaultConnectionString));
+    builder.Services.AddScoped<IRealtimeProjectionStore, EfRealtimeProjectionStore>();
+    builder.Services.AddScoped<IIntegrationEventHandler, PlatformEventProjectionHandler>();
+}
+
 builder.Services.AddRealtimePixEventBus(builder.Configuration, ServiceName);
+if (!string.IsNullOrWhiteSpace(defaultConnectionString))
+{
+    builder.Services.AddRealtimePixEfCoreEventing<RealtimeProjectionDbContext>();
+}
 
 var app = builder.Build();
 app.UseCors("browser");
@@ -32,8 +53,10 @@ app.MapGet("/health", () => Results.Ok(new { service = ServiceName, status = "ok
 app.MapGet("/health/live", () => Results.Ok(new { service = ServiceName, status = "live" }));
 app.MapGet("/health/ready", () => Results.Ok(new { service = ServiceName, status = "ready" }));
 app.MapHub<EventsHub>("/events/hub");
-app.MapGet("/events/timeline", (RealtimeProjectionStore store) => Results.Ok(store.GetTimeline()));
-app.MapGet("/events/transfers/{transferId}/flow", (string transferId, RealtimeProjectionStore store) => Results.Ok(store.GetFlow(transferId)));
+app.MapGet("/events/timeline", async (IRealtimeProjectionStore store, CancellationToken cancellationToken) =>
+    Results.Ok(await store.GetTimelineAsync(cancellationToken)));
+app.MapGet("/events/transfers/{transferId}/flow", async (string transferId, IRealtimeProjectionStore store, CancellationToken cancellationToken) =>
+    Results.Ok(await store.GetFlowAsync(transferId, cancellationToken)));
 app.MapGet("/realtime/token", () => Results.Ok(new
 {
     mode = "local-jsonl",
@@ -65,6 +88,40 @@ public sealed record FlowStepResponse(
     string CorrelationId = "",
     string? CausationId = null,
     string Outcome = "info");
+
+public interface IRealtimeProjectionStore
+{
+    Task<bool> TryAddTimelineAsync(TimelineEventResponse item, CancellationToken cancellationToken);
+
+    Task<bool> TryAddFlowStepAsync(string sourceEventId, FlowStepResponse step, CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<TimelineEventResponse>> GetTimelineAsync(CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<FlowStepResponse>> GetFlowAsync(string transferId, CancellationToken cancellationToken);
+}
+
+public sealed class InMemoryRealtimeProjectionStoreAdapter(RealtimeProjectionStore inner) : IRealtimeProjectionStore
+{
+    public Task<bool> TryAddTimelineAsync(TimelineEventResponse item, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.TryAddTimeline(item));
+    }
+
+    public Task<bool> TryAddFlowStepAsync(string sourceEventId, FlowStepResponse step, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.TryAddFlowStep(sourceEventId, step));
+    }
+
+    public Task<IReadOnlyCollection<TimelineEventResponse>> GetTimelineAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.GetTimeline());
+    }
+
+    public Task<IReadOnlyCollection<FlowStepResponse>> GetFlowAsync(string transferId, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(inner.GetFlow(transferId));
+    }
+}
 
 public sealed class RealtimeProjectionStore
 {
@@ -143,22 +200,22 @@ public static class RealtimeEventsServiceMetadata
     public const string Name = "realtime-events-service";
 }
 
-public sealed class EventsHub(RealtimeProjectionStore store) : Hub
+public sealed class EventsHub(IRealtimeProjectionStore store) : Hub
 {
     public override async Task OnConnectedAsync()
     {
-        await Clients.Caller.SendAsync("events.timelineSnapshot", store.GetTimeline(), Context.ConnectionAborted);
+        await Clients.Caller.SendAsync("events.timelineSnapshot", await store.GetTimelineAsync(Context.ConnectionAborted), Context.ConnectionAborted);
         await base.OnConnectedAsync();
     }
 
     public async Task SubscribeTransfer(string transferId)
     {
-        await Clients.Caller.SendAsync("events.transferFlowSnapshot", store.GetFlow(transferId), Context.ConnectionAborted);
+        await Clients.Caller.SendAsync("events.transferFlowSnapshot", await store.GetFlowAsync(transferId, Context.ConnectionAborted), Context.ConnectionAborted);
     }
 }
 
 public sealed class PlatformEventProjectionHandler(
-    RealtimeProjectionStore store,
+    IRealtimeProjectionStore store,
     IIntegrationEventPublisher publisher,
     IHubContext<EventsHub> hubContext) : IIntegrationEventHandler
 {
@@ -176,7 +233,7 @@ public sealed class PlatformEventProjectionHandler(
             envelope.OccurredAt,
             envelope.Payload);
 
-        if (!store.TryAddTimeline(timelineItem))
+        if (!await store.TryAddTimelineAsync(timelineItem, cancellationToken))
         {
             return;
         }
@@ -190,7 +247,7 @@ public sealed class PlatformEventProjectionHandler(
 
         var step = CreateStep(envelope, transferId);
         var sourceEventId = envelope.EventId.ToString("N");
-        var addedFlowStep = store.TryAddFlowStep(sourceEventId, step);
+        var addedFlowStep = await store.TryAddFlowStepAsync(sourceEventId, step, cancellationToken);
         if (addedFlowStep)
         {
             await hubContext.Clients.All.SendAsync("events.transferFlowStep", step, cancellationToken);

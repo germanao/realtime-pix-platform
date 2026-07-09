@@ -94,3 +94,7 @@ output "apim_name" {
 output "apim_gateway_url" {
   value = azurerm_api_management.main.gateway_url
 }
+
+output "monitor_action_group_id" {
+  value = azurerm_monitor_action_group.showcase.id
+}

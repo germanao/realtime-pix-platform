@@ -57,7 +57,7 @@ public sealed class WalletLedgerStoreTests
         var recipientAccount = store.EnsureAccounts("recipient").Accounts.First(item => item.BankName == "Bank A");
         store.Deposit(senderAccount.AccountId, "sender", 100m, "seed");
         var publisher = new RecordingPublisher();
-        var handler = new global::PixTransferRequestedHandler(store, publisher);
+        var handler = new global::PixTransferRequestedHandler(store, publisher, new global::NoopTransactionalOperation());
         var payload = new PixTransferRequestedPayload(
             "transfer-1",
             "idempotency-1",
@@ -94,7 +94,7 @@ public sealed class WalletLedgerStoreTests
         var senderAccount = store.EnsureAccounts("sender").Accounts.First(item => item.BankName == "Bank A");
         var recipientAccount = store.EnsureAccounts("recipient").Accounts.First(item => item.BankName == "Bank A");
         var publisher = new RecordingPublisher();
-        var handler = new global::PixTransferRequestedHandler(store, publisher);
+        var handler = new global::PixTransferRequestedHandler(store, publisher, new global::NoopTransactionalOperation());
         var payload = new PixTransferRequestedPayload(
             "transfer-1",
             "idempotency-1",
