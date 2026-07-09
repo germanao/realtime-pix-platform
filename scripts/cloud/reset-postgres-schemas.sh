@@ -24,11 +24,41 @@ reset_schema() {
     exit 1
   fi
 
-  echo "Resetting schema public in ${db_name}."
+  echo "Resetting service-owned objects in ${db_name}."
   PGPASSWORD="${password}" psql "host=${PGHOST} port=5432 dbname=${db_name} user=${db_user} sslmode=require" -v ON_ERROR_STOP=1 <<SQL
-DROP SCHEMA IF EXISTS public CASCADE;
-CREATE SCHEMA public AUTHORIZATION ${db_user};
-GRANT USAGE, CREATE ON SCHEMA public TO ${db_user};
+DO \$\$
+DECLARE
+  ddl text;
+BEGIN
+  FOR ddl IN
+    SELECT format(
+      'DROP %s IF EXISTS %I.%I CASCADE',
+      CASE c.relkind
+        WHEN 'S' THEN 'SEQUENCE'
+        WHEN 'v' THEN 'VIEW'
+        WHEN 'm' THEN 'MATERIALIZED VIEW'
+        ELSE 'TABLE'
+      END,
+      n.nspname,
+      c.relname)
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+      AND c.relowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+    ORDER BY
+      CASE c.relkind
+        WHEN 'v' THEN 1
+        WHEN 'm' THEN 2
+        WHEN 'r' THEN 3
+        WHEN 'p' THEN 4
+        ELSE 5
+      END
+  LOOP
+    EXECUTE ddl;
+  END LOOP;
+END
+\$\$;
 SQL
 
   unset password
@@ -39,4 +69,4 @@ reset_schema "wallet-db" "wallet_app" "wallet_ledger_db"
 reset_schema "transaction-db" "transaction_app" "transaction_db"
 reset_schema "realtime-db" "realtime_app" "realtime_projection_db"
 
-echo "PostgreSQL public schemas were reset. This intentionally deleted disposable POC data."
+echo "PostgreSQL service-owned objects were reset. This intentionally deleted disposable POC data."

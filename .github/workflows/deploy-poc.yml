@@ -145,6 +145,7 @@ jobs:
           docker push "$ACR_LOGIN_SERVER/realtime-pix/bot-service:$TAG"
 
       - name: Apply runtime
+        id: runtime_apply
         if: inputs.apply_runtime == 'true'
         working-directory: infra/terraform/runtime
         run: |
@@ -190,6 +191,7 @@ jobs:
           done
 
       - name: Smoke test
+        id: smoke_test
         if: inputs.apply_runtime == 'true'
         working-directory: infra/terraform/runtime
         shell: bash
@@ -199,7 +201,7 @@ jobs:
           API_BASE_URL="$API_URL" node ../../../scripts/cloud/smoke-e2e.mjs
 
       - name: Dump Container Apps diagnostics
-        if: failure() && inputs.apply_runtime == 'true'
+        if: failure() && inputs.apply_runtime == 'true' && (steps.runtime_apply.outcome == 'failure' || steps.smoke_test.outcome == 'failure')
         shell: bash
         run: |
           RG="${{ steps.foundation.outputs.resource_group_name }}"
