@@ -1,6 +1,8 @@
 name: deploy-poc
 
 on:
+  push:
+    branches: ["main"]
   workflow_dispatch:
     inputs:
       apply_runtime:
@@ -98,7 +100,7 @@ jobs:
         run: bash scripts/cloud/postgres-bootstrap-noninteractive.sh
 
       - name: Reset PostgreSQL schemas
-        if: ${{ github.event.inputs.reset_databases == 'true' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.reset_databases == 'true' }}
         shell: bash
         env:
           PGHOST: ${{ steps.foundation.outputs.postgres_fqdn }}
@@ -146,7 +148,7 @@ jobs:
 
       - name: Apply runtime
         id: runtime_apply
-        if: inputs.apply_runtime == 'true'
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.apply_runtime == 'true' }}
         working-directory: infra/terraform/runtime
         run: |
           terraform init \
@@ -162,7 +164,7 @@ jobs:
             -var="image_tag=${{ github.sha }}"
 
       - name: Sync Vercel frontend environment
-        if: inputs.apply_runtime == 'true' && env.VERCEL_API_TOKEN != ''
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.apply_runtime == 'true') && env.VERCEL_API_TOKEN != '' }}
         working-directory: infra/terraform/runtime
         shell: bash
         env:
@@ -199,7 +201,7 @@ jobs:
 
       - name: Smoke test
         id: smoke_test
-        if: inputs.apply_runtime == 'true'
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.apply_runtime == 'true' }}
         working-directory: infra/terraform/runtime
         shell: bash
         run: |
@@ -208,7 +210,7 @@ jobs:
           API_BASE_URL="$API_URL" node ../../../scripts/cloud/smoke-e2e.mjs
 
       - name: Dump Container Apps diagnostics
-        if: failure() && inputs.apply_runtime == 'true' && (steps.runtime_apply.outcome == 'failure' || steps.smoke_test.outcome == 'failure')
+        if: ${{ failure() && (github.event_name != 'workflow_dispatch' || inputs.apply_runtime == 'true') && (steps.runtime_apply.outcome == 'failure' || steps.smoke_test.outcome == 'failure') }}
         shell: bash
         run: |
           RG="${{ steps.foundation.outputs.resource_group_name }}"
