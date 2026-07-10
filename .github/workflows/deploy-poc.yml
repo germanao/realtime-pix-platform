@@ -181,7 +181,14 @@ jobs:
             local target="$3"
 
             npx vercel env rm "$key" "$target" --yes --token "$VERCEL_API_TOKEN" >/dev/null 2>&1 || true
-            printf "%s" "$value" | npx vercel env add "$key" "$target" --token "$VERCEL_API_TOKEN"
+            if [[ "$target" == "preview" ]]; then
+              {
+                printf "%s\n" "$value"
+                printf "\n"
+              } | npx vercel env add "$key" "$target" --token "$VERCEL_API_TOKEN"
+            else
+              printf "%s\n" "$value" | npx vercel env add "$key" "$target" --token "$VERCEL_API_TOKEN"
+            fi
           }
 
           for target in production preview; do

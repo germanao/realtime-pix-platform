@@ -9,14 +9,36 @@ set -euo pipefail
 : "${KEYVAULT_NAME:?Set KEYVAULT_NAME.}"
 
 PGADMIN_PASSWORD="$(az keyvault secret show --vault-name "${KEYVAULT_NAME}" --name "postgres-admin-password" --query value -o tsv)"
-IDENTITY_PASSWORD="$(openssl rand -base64 32 | tr -d '\n')"
-WALLET_PASSWORD="$(openssl rand -base64 32 | tr -d '\n')"
-TRANSACTION_PASSWORD="$(openssl rand -base64 32 | tr -d '\n')"
-REALTIME_PASSWORD="$(openssl rand -base64 32 | tr -d '\n')"
 
 escape_sql_literal() {
   printf "%s" "$1" | sed "s/'/''/g"
 }
+
+read_existing_password() {
+  local secret_name="$1"
+  local connection_string
+
+  connection_string="$(az keyvault secret show --vault-name "${KEYVAULT_NAME}" --name "${secret_name}" --query value -o tsv 2>/dev/null || true)"
+  printf "%s" "${connection_string}" | tr ';' '\n' | sed -n 's/^Password=//p' | head -n 1
+}
+
+password_or_new() {
+  local secret_name="$1"
+  local existing_password
+
+  existing_password="$(read_existing_password "${secret_name}")"
+  if [[ -n "${existing_password}" ]]; then
+    printf "%s" "${existing_password}"
+    return
+  fi
+
+  openssl rand -base64 32 | tr -d '\n'
+}
+
+IDENTITY_PASSWORD="$(password_or_new identity-db)"
+WALLET_PASSWORD="$(password_or_new wallet-db)"
+TRANSACTION_PASSWORD="$(password_or_new transaction-db)"
+REALTIME_PASSWORD="$(password_or_new realtime-db)"
 
 tmp_sql="$(mktemp)"
 cat > "${tmp_sql}" <<SQL
