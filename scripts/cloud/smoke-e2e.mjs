@@ -40,6 +40,36 @@ async function waitForTransfer(transferId) {
   throw new Error(`Transfer ${transferId} did not reach a final state.`);
 }
 
+async function waitForTimelineEvent(transferId) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const timeline = await api("/events/timeline");
+    if (timeline.some((item) => item.transferId === transferId)) {
+      return timeline;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error("Public timeline did not include the completed smoke transfer.");
+}
+
+async function waitForTransferFlow(transferId, expectedEventTypes) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const flow = await api(`/events/transfers/${encodeURIComponent(transferId)}/flow`);
+    const eventTypes = new Set(flow.map((item) => item.eventType));
+    if (expectedEventTypes.every((eventType) => eventTypes.has(eventType))) {
+      return flow;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  const flow = await api(`/events/transfers/${encodeURIComponent(transferId)}/flow`);
+  const eventTypes = new Set(flow.map((item) => item.eventType));
+  const missing = expectedEventTypes.filter((eventType) => !eventTypes.has(eventType));
+  throw new Error(`Transfer flow is missing ${missing.join(", ")}.`);
+}
+
 function findBankA(accounts, userId) {
   const account = accounts.find((item) => item.userId === userId && item.bankName === "Bank A");
   if (!account) {
@@ -105,18 +135,9 @@ if (senderAfter.balance < 100) {
   throw new Error(`Sender balance was lower than expected after transfer: ${senderAfter.balance}.`);
 }
 
-const timeline = await api("/events/timeline");
-if (!timeline.some((item) => item.transferId === completedTransfer.transferId)) {
-  throw new Error("Public timeline did not include the completed smoke transfer.");
-}
-
-const flow = await api(`/events/transfers/${encodeURIComponent(completedTransfer.transferId)}/flow`);
-const eventTypes = new Set(flow.map((item) => item.eventType));
-for (const expected of ["PixTransferRequested.v1", "PixDebitSucceeded.v1", "PixCreditSucceeded.v1", "PixTransferCompleted.v1"]) {
-  if (!eventTypes.has(expected)) {
-    throw new Error(`Transfer flow is missing ${expected}.`);
-  }
-}
+const expectedFlowEvents = ["PixTransferRequested.v1", "PixDebitSucceeded.v1", "PixCreditSucceeded.v1", "PixTransferCompleted.v1"];
+const timeline = await waitForTimelineEvent(completedTransfer.transferId);
+const flow = await waitForTransferFlow(completedTransfer.transferId, expectedFlowEvents);
 
 console.log(JSON.stringify({
   status: "ok",
