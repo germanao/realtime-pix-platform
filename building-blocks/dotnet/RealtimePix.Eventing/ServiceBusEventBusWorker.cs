@@ -21,6 +21,40 @@ public sealed class ServiceBusEventBusWorker(
             throw new InvalidOperationException("Service Bus consumer requires EventBus:ServiceBus:SubscriptionName.");
         }
 
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await RunProcessorAsync(busOptions, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Service Bus worker for {Topic}/{Subscription} stopped before shutdown. Restarting in 5 seconds.",
+                    busOptions.TopicName,
+                    busOptions.SubscriptionName);
+
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
+        }
+    }
+
+    private async Task RunProcessorAsync(
+        ServiceBusEventBusOptions busOptions,
+        CancellationToken stoppingToken)
+    {
         await using var processor = client.CreateProcessor(
             busOptions.TopicName,
             busOptions.SubscriptionName,
@@ -30,7 +64,12 @@ public sealed class ServiceBusEventBusWorker(
                 MaxConcurrentCalls = Math.Max(1, busOptions.MaxConcurrentCalls)
             });
 
-        processor.ProcessMessageAsync += message => ProcessMessageAsync(message, stoppingToken);
+        Task OnMessageAsync(ProcessMessageEventArgs message)
+        {
+            return ProcessMessageAsync(message, stoppingToken);
+        }
+
+        processor.ProcessMessageAsync += OnMessageAsync;
         processor.ProcessErrorAsync += ProcessErrorAsync;
 
         await processor.StartProcessingAsync(stoppingToken);
@@ -47,6 +86,8 @@ public sealed class ServiceBusEventBusWorker(
         finally
         {
             await processor.StopProcessingAsync(CancellationToken.None);
+            processor.ProcessMessageAsync -= OnMessageAsync;
+            processor.ProcessErrorAsync -= ProcessErrorAsync;
         }
     }
 

@@ -227,6 +227,36 @@ jobs:
               --query "[].{name:name, active:properties.active, trafficWeight:properties.trafficWeight, healthState:properties.healthState, provisioningState:properties.provisioningState, createdTime:properties.createdTime}" \
               --output table || true
             echo "::endgroup::"
+
+            echo "::group::${app} logs"
+            az containerapp logs show \
+              --resource-group "$RG" \
+              --name "$app" \
+              --tail 120 \
+              --format text \
+              --follow false || true
+            echo "::endgroup::"
+          done
+
+          echo "::group::Service Bus subscriptions"
+          az servicebus topic subscription list \
+            --resource-group "$RG" \
+            --namespace-name "${{ steps.foundation.outputs.servicebus_namespace_name }}" \
+            --topic-name platform-events \
+            --query "[].{name:name,status:status,countMessage:countMessage,activeMessageCount:activeMessageCount,deadLetterMessageCount:deadLetterMessageCount}" \
+            --output table || true
+          echo "::endgroup::"
+
+          for subscription in wallet-ledger transaction realtime-events; do
+            echo "::group::Service Bus rules for ${subscription}"
+            az servicebus topic subscription rule list \
+              --resource-group "$RG" \
+              --namespace-name "${{ steps.foundation.outputs.servicebus_namespace_name }}" \
+              --topic-name platform-events \
+              --subscription-name "$subscription" \
+              --query "[].{name:name,filterType:filterType,sqlFilter:sqlFilter.sqlExpression}" \
+              --output table || true
+            echo "::endgroup::"
           done
 
       - name: Remove temporary PostgreSQL firewall rule

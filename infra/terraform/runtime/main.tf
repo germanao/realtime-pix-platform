@@ -301,7 +301,7 @@ resource "azurerm_container_app" "wallet_ledger" {
   }
 
   template {
-    min_replicas = 0
+    min_replicas = 1
     max_replicas = 1
 
     container {
@@ -379,7 +379,7 @@ resource "azurerm_container_app" "transaction" {
   }
 
   template {
-    min_replicas = 0
+    min_replicas = 1
     max_replicas = 1
 
     container {
@@ -470,7 +470,7 @@ resource "azurerm_container_app" "realtime_events" {
   }
 
   template {
-    min_replicas = 0
+    min_replicas = 1
     max_replicas = 1
 
     container {
