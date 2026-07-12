@@ -120,6 +120,13 @@ jobs:
           SERVICEBUS_NAMESPACE: ${{ steps.foundation.outputs.servicebus_namespace_name }}
         run: bash scripts/cloud/remove-servicebus-default-rules.sh
 
+      - name: Reset realtime projection subscription backlog
+        shell: bash
+        env:
+          RG: ${{ steps.foundation.outputs.resource_group_name }}
+          SERVICEBUS_NAMESPACE: ${{ steps.foundation.outputs.servicebus_namespace_name }}
+        run: bash scripts/cloud/reset-realtime-subscription.sh
+
       - name: Build service images in ACR
         shell: bash
         run: |

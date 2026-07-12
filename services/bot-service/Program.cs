@@ -23,25 +23,40 @@ public sealed class BotHeartbeatWorker(
     ILogger<BotHeartbeatWorker> logger) : BackgroundService
 {
     private static readonly HttpClient HttpClient = new();
+    private static readonly TimeSpan BotRefreshInterval = TimeSpan.FromMinutes(10);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await TrySeedBotWalletsAsync(stoppingToken);
+        await PublishBotPresenceAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            foreach (var bot in KnownBotUsers.All)
+            try
             {
-                await publisher.PublishAsync(
-                    EventTypes.UserPresenceChanged,
-                    1,
-                    BotServiceMetadata.Name,
-                    new UserPresenceChangedPayload(bot.UserId, bot.DisplayName, true, true, DateTimeOffset.UtcNow),
-                    correlationId: bot.UserId,
-                    cancellationToken: stoppingToken);
+                await Task.Delay(BotRefreshInterval, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+            await TrySeedBotWalletsAsync(stoppingToken);
+            await PublishBotPresenceAsync(stoppingToken);
+        }
+    }
+
+    private async Task PublishBotPresenceAsync(CancellationToken cancellationToken)
+    {
+        foreach (var bot in KnownBotUsers.All)
+        {
+            await publisher.PublishAsync(
+                EventTypes.UserPresenceChanged,
+                1,
+                BotServiceMetadata.Name,
+                new UserPresenceChangedPayload(bot.UserId, bot.DisplayName, true, true, DateTimeOffset.UtcNow),
+                correlationId: bot.UserId,
+                cancellationToken: cancellationToken);
         }
     }
 

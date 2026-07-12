@@ -251,23 +251,23 @@ public sealed class PlatformEventProjectionHandler(
         if (addedFlowStep)
         {
             await hubContext.Clients.All.SendAsync("events.transferFlowStep", step, cancellationToken);
-        }
 
-        await publisher.PublishAsync(
-            RealtimePix.Contracts.EventTypes.ArchitectureFlowStepRecorded,
-            1,
-            RealtimeEventsServiceMetadata.Name,
-            new ArchitectureFlowStepRecordedPayload(
-                step.StepId,
-                step.TransferId,
-                step.EventType,
-                step.Stage,
-                step.Title,
-                step.Detail,
-                step.RecordedAt),
-            correlationId: envelope.CorrelationId,
-            causationId: envelope.EventId.ToString("N"),
-            cancellationToken: cancellationToken);
+            await publisher.PublishAsync(
+                RealtimePix.Contracts.EventTypes.ArchitectureFlowStepRecorded,
+                1,
+                RealtimeEventsServiceMetadata.Name,
+                new ArchitectureFlowStepRecordedPayload(
+                    step.StepId,
+                    step.TransferId,
+                    step.EventType,
+                    step.Stage,
+                    step.Title,
+                    step.Detail,
+                    step.RecordedAt),
+                correlationId: envelope.CorrelationId,
+                causationId: envelope.EventId.ToString("N"),
+                cancellationToken: cancellationToken);
+        }
     }
 
     private static FlowStepResponse CreateStep(EventEnvelope envelope, string? transferId)
