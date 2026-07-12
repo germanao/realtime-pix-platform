@@ -18,6 +18,10 @@ on:
         type: choice
         options: ["false", "true"]
 
+concurrency:
+  group: deploy-poc
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
@@ -121,6 +125,7 @@ jobs:
         run: bash scripts/cloud/remove-servicebus-default-rules.sh
 
       - name: Reset realtime projection subscription backlog
+        timeout-minutes: 5
         shell: bash
         env:
           RG: ${{ steps.foundation.outputs.resource_group_name }}
