@@ -15,7 +15,7 @@ RULE_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP
 ADDRESS='azurerm_servicebus_subscription_rule.consumer_filters["realtime-events"]'
 
 set +e
-IMPORT_OUTPUT="$(terraform import "$ADDRESS" "$RULE_ID" 2>&1)"
+IMPORT_OUTPUT="$(terraform import -input=false "$ADDRESS" "$RULE_ID" 2>&1)"
 IMPORT_STATUS=$?
 set -e
 

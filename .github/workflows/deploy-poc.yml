@@ -33,6 +33,11 @@ jobs:
     environment: poc
     env:
       VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
+      TF_INPUT: "0"
+      TF_VAR_tfstate_resource_group_name: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+      TF_VAR_tfstate_storage_account_name: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+      TF_VAR_tfstate_container_name: ${{ vars.TFSTATE_CONTAINER }}
+      TF_VAR_publisher_email: ${{ vars.PUBLISHER_EMAIL }}
     steps:
       - uses: actions/checkout@v4
       - uses: azure/login@v2
@@ -48,6 +53,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Apply foundation
+        timeout-minutes: 15
         working-directory: infra/terraform/foundation
         run: |
           terraform init \
