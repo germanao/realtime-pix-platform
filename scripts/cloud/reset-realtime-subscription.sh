@@ -22,7 +22,6 @@ if az servicebus topic subscription show \
     --namespace-name "$SERVICEBUS_NAMESPACE" \
     --topic-name "$TOPIC_NAME" \
     --name "$SUBSCRIPTION_NAME" \
-    --yes \
     --only-show-errors \
     --output none
 fi
