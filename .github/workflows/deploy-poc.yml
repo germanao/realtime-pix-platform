@@ -56,6 +56,7 @@ jobs:
             -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
             -backend-config="key=foundation-poc.tfstate" \
             -backend-config="use_azuread_auth=true"
+          AZURE_SUBSCRIPTION_ID="${{ vars.AZURE_SUBSCRIPTION_ID }}" bash ../../../scripts/cloud/import-realtime-servicebus-rule-state.sh
           terraform apply -auto-approve \
             -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
             -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
