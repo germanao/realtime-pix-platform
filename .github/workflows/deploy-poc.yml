@@ -52,6 +52,20 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Break stale foundation state lease
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          az storage blob lease break \
+            --account-name "${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            --container-name "${{ vars.TFSTATE_CONTAINER }}" \
+            --blob-name "foundation-poc.tfstate" \
+            --lease-break-period 0 \
+            --auth-mode login \
+            --only-show-errors \
+            --output none || true
+          sleep 15
+
       - name: Apply foundation
         timeout-minutes: 15
         working-directory: infra/terraform/foundation
