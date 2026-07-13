@@ -497,6 +497,11 @@ resource "azurerm_container_app" "realtime_events" {
         secret_name = "signalr-connection-string"
       }
 
+      env {
+        name  = "EventBus__ServiceBus__SubscriptionName"
+        value = "realtime-events-v2"
+      }
+
       liveness_probe {
         transport = "HTTP"
         port      = 8080

@@ -5,7 +5,7 @@ set -euo pipefail
 : "${SERVICEBUS_NAMESPACE:?Set SERVICEBUS_NAMESPACE.}"
 : "${TOPIC:=platform-events}"
 
-for subscription in wallet-ledger transaction realtime-events; do
+for subscription in wallet-ledger transaction realtime-events realtime-events-v2; do
   echo "Removing default TrueFilter rule from ${subscription}, if present..."
   az servicebus topic subscription rule delete \
     --resource-group "${RG}" \

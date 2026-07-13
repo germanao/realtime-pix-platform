@@ -145,14 +145,6 @@ jobs:
           SERVICEBUS_NAMESPACE: ${{ steps.foundation.outputs.servicebus_namespace_name }}
         run: bash scripts/cloud/remove-servicebus-default-rules.sh
 
-      - name: Reset realtime projection subscription backlog
-        timeout-minutes: 5
-        shell: bash
-        env:
-          RG: ${{ steps.foundation.outputs.resource_group_name }}
-          SERVICEBUS_NAMESPACE: ${{ steps.foundation.outputs.servicebus_namespace_name }}
-        run: bash scripts/cloud/reset-realtime-subscription.sh
-
       - name: Build service images in ACR
         shell: bash
         run: |
@@ -280,7 +272,7 @@ jobs:
             --output table || true
           echo "::endgroup::"
 
-          for subscription in wallet-ledger transaction realtime-events; do
+          for subscription in wallet-ledger transaction realtime-events realtime-events-v2; do
             echo "::group::Service Bus rules for ${subscription}"
             az servicebus topic subscription rule list \
               --resource-group "$RG" \

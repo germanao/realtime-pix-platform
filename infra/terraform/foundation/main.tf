@@ -44,6 +44,9 @@ locals {
     "wallet-ledger"   = "eventType = 'PixTransferRequested.v1'"
     "transaction"     = "eventType IN ('PixDebitSucceeded.v1', 'PixDebitFailed.v1', 'PixCreditSucceeded.v1')"
     "realtime-events" = "eventType IN ('AnonymousUserJoined.v1', 'UserPresenceChanged.v1', 'AccountCreated.v1', 'FundsDeposited.v1', 'PixTransferRequested.v1', 'PixDebitSucceeded.v1', 'PixDebitFailed.v1', 'PixCreditSucceeded.v1', 'PixTransferCompleted.v1', 'PixTransferFailed.v1', 'ArchitectureFlowStepRecorded.v1')"
+    # UI projections are rebuildable. A new cursor avoids coupling deployment
+    # to the historical backlog of the original projection subscription.
+    "realtime-events-v2" = "eventType IN ('AnonymousUserJoined.v1', 'UserPresenceChanged.v1', 'AccountCreated.v1', 'FundsDeposited.v1', 'PixTransferRequested.v1', 'PixDebitSucceeded.v1', 'PixDebitFailed.v1', 'PixCreditSucceeded.v1', 'PixTransferCompleted.v1', 'PixTransferFailed.v1', 'ArchitectureFlowStepRecorded.v1')"
   }
 }
 
