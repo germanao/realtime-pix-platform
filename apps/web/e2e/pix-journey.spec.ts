@@ -1,5 +1,41 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
+
+const primaryJourneyOrder = [
+  "browser-start",
+  "gateway",
+  "transaction-start",
+  "event-bus",
+  "wallet",
+  "transaction-confirm",
+  "realtime",
+  "browser-end"
+] as const;
+
+async function expectProceduralReplay(page: Page) {
+  for (const [activeIndex, nodeId] of primaryJourneyOrder.entries()) {
+    await expect(
+      page.locator(`.serviceNode[data-flow-node="${nodeId}"][data-lane="primary"].active`)
+    ).toBeVisible({ timeout: 3_000 });
+
+    const states = await page
+      .locator('.serviceNode[data-lane="primary"]')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          id: node.getAttribute("data-flow-node"),
+          status: ["idle", "active", "success", "failure"].find((status) =>
+            node.classList.contains(status)
+          )
+        }))
+      );
+
+    expect(states.filter(({ status }) => status === "active").map(({ id }) => id)).toEqual([
+      nodeId
+    ]);
+    expect(states.slice(0, activeIndex).every(({ status }) => status === "success")).toBe(true);
+    expect(states.slice(activeIndex + 1).every(({ status }) => status === "idle")).toBe(true);
+  }
+}
 
 test("simple mode sends one PIX, preserves context in Expert mode, and grants welcome money once", async ({
   page
@@ -34,11 +70,15 @@ test("simple mode sends one PIX, preserves context in Expert mode, and grants we
   await expect(page.getByRole("heading", { name: "Following $25.00" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "$9,975.00" })).toBeVisible();
   await expect(page.getByText("Sent to Aurora Ledger", { exact: true })).toBeVisible();
-  await expect(page.locator('.serviceNode.primary.success')).toHaveCount(8);
+  await expect(page.locator('.serviceNode.primary.success')).toHaveCount(8, { timeout: 15_000 });
   await page.screenshot({
     fullPage: true,
     path: path.resolve(process.cwd(), "../../outputs/pix-layout-after.png")
   });
+
+  await page.getByRole("button", { name: "Replay" }).click();
+  await expectProceduralReplay(page);
+  await expect(page.locator('.serviceNode.primary.success')).toHaveCount(8, { timeout: 3_000 });
 
   await page.getByRole("switch", { name: "Expert mode" }).click();
   await expect(page.getByRole("heading", { name: "Emit PIX transfer" })).toBeVisible();
@@ -161,3 +201,4 @@ test("presence appears and disappears immediately across two browser sessions", 
 
   await firstContext.close();
 });
+
