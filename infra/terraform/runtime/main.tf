@@ -776,3 +776,133 @@ resource "azurerm_api_management_api_operation" "public_routes" {
     status_code = each.value.status_code
   }
 }
+
+# APIM does not forward an OPTIONS request when it has no matching operation.
+# Define one preflight operation for every browser-visible route and only echo
+# the current origin after validating it against the public frontend origins.
+resource "azurerm_api_management_api_operation" "browser_preflight" {
+  for_each            = local.public_api_operations
+  operation_id        = "preflight-${each.key}"
+  api_name            = azurerm_api_management_api.gateway.name
+  api_management_name = data.terraform_remote_state.foundation.outputs.apim_name
+  resource_group_name = local.resource_group_name
+  display_name        = "Browser preflight: ${each.value.display_name}"
+  method              = "OPTIONS"
+  url_template        = each.value.url_template
+
+  dynamic "template_parameter" {
+    for_each = try(each.value.template_parameters, [])
+    content {
+      name     = template_parameter.value
+      type     = "string"
+      required = true
+    }
+  }
+
+  response {
+    status_code = 204
+  }
+}
+
+resource "azurerm_api_management_api_operation_policy" "browser_preflight" {
+  for_each            = local.public_api_operations
+  api_name            = azurerm_api_management_api.gateway.name
+  api_management_name = data.terraform_remote_state.foundation.outputs.apim_name
+  resource_group_name = local.resource_group_name
+  operation_id        = azurerm_api_management_api_operation.browser_preflight[each.key].operation_id
+
+  xml_content = <<-XML
+    <policies>
+      <inbound>
+        <base />
+        <choose>
+          <when condition='@{
+            var origin = context.Request.Headers.GetValueOrDefault("Origin", "");
+            return origin == "http://localhost:3000"
+              || origin == "https://realtime-pix-web.vercel.app"
+              || (origin.StartsWith("https://realtime-pix-web-") &amp;&amp; origin.EndsWith(".vercel.app"));
+          }'>
+            <return-response>
+              <set-status code="204" reason="No Content" />
+              <set-header name="Access-Control-Allow-Origin" exists-action="override">
+                <value>@(context.Request.Headers.GetValueOrDefault("Origin", ""))</value>
+              </set-header>
+              <set-header name="Access-Control-Allow-Methods" exists-action="override">
+                <value>GET, POST, OPTIONS</value>
+              </set-header>
+              <set-header name="Access-Control-Allow-Headers" exists-action="override">
+                <value>content-type, accept</value>
+              </set-header>
+              <set-header name="Access-Control-Max-Age" exists-action="override">
+                <value>300</value>
+              </set-header>
+              <set-header name="Vary" exists-action="override">
+                <value>Origin</value>
+              </set-header>
+            </return-response>
+          </when>
+          <otherwise>
+            <return-response>
+              <set-status code="204" reason="No Content" />
+            </return-response>
+          </otherwise>
+        </choose>
+      </inbound>
+      <backend><base /></backend>
+      <outbound><base /></outbound>
+      <on-error><base /></on-error>
+    </policies>
+  XML
+}
+
+resource "azurerm_api_management_api_policy" "browser_cors" {
+  api_name            = azurerm_api_management_api.gateway.name
+  api_management_name = data.terraform_remote_state.foundation.outputs.apim_name
+  resource_group_name = local.resource_group_name
+
+  xml_content = <<-XML
+    <policies>
+      <inbound><base /></inbound>
+      <backend><base /></backend>
+      <outbound>
+        <base />
+        <choose>
+          <when condition='@{
+            var origin = context.Request.Headers.GetValueOrDefault("Origin", "");
+            return origin == "http://localhost:3000"
+              || origin == "https://realtime-pix-web.vercel.app"
+              || (origin.StartsWith("https://realtime-pix-web-") &amp;&amp; origin.EndsWith(".vercel.app"));
+          }'>
+            <set-header name="Access-Control-Allow-Origin" exists-action="override">
+              <value>@(context.Request.Headers.GetValueOrDefault("Origin", ""))</value>
+            </set-header>
+            <set-header name="Vary" exists-action="override">
+              <value>Origin</value>
+            </set-header>
+          </when>
+        </choose>
+      </outbound>
+      <on-error>
+        <base />
+        <choose>
+          <when condition='@{
+            var origin = context.Request.Headers.GetValueOrDefault("Origin", "");
+            return origin == "http://localhost:3000"
+              || origin == "https://realtime-pix-web.vercel.app"
+              || (origin.StartsWith("https://realtime-pix-web-") &amp;&amp; origin.EndsWith(".vercel.app"));
+          }'>
+            <set-header name="Access-Control-Allow-Origin" exists-action="override">
+              <value>@(context.Request.Headers.GetValueOrDefault("Origin", ""))</value>
+            </set-header>
+            <set-header name="Vary" exists-action="override">
+              <value>Origin</value>
+            </set-header>
+          </when>
+        </choose>
+      </on-error>
+    </policies>
+  XML
+
+  depends_on = [azurerm_api_management_api_operation.public_routes]
+}
+

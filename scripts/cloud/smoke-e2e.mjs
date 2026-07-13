@@ -10,12 +10,14 @@ const runId = process.env.GITHUB_RUN_ID ?? Date.now().toString();
 const clientId = `smoke-${runId}-${Math.random().toString(16).slice(2)}`;
 
 async function api(path, options = {}) {
+  const headers = new Headers(options.headers);
+  if (options.body && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+
   const response = await fetch(`${apiBase}${path}`, {
     ...options,
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers ?? {})
-    }
+    headers
   });
 
   const text = await response.text();
@@ -25,6 +27,29 @@ async function api(path, options = {}) {
   }
 
   return body;
+}
+
+async function verifyBrowserPreflight() {
+  const origin = "https://realtime-pix-web.vercel.app";
+  const response = await fetch(`${apiBase}/sessions/anonymous`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: origin,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type"
+    }
+  });
+
+  const allowedMethods = response.headers.get("access-control-allow-methods") ?? "";
+  if (
+    !response.ok ||
+    response.headers.get("access-control-allow-origin") !== origin ||
+    !allowedMethods.split(",").map((method) => method.trim()).includes("POST")
+  ) {
+    throw new Error(
+      `APIM browser preflight failed with ${response.status}: ${await response.text()}`
+    );
+  }
 }
 
 async function waitForTransfer(transferId) {
@@ -79,6 +104,7 @@ function findBankA(accounts, userId) {
   return account;
 }
 
+await verifyBrowserPreflight();
 await api("/health");
 
 const session = await api("/sessions/anonymous", {
@@ -146,3 +172,4 @@ console.log(JSON.stringify({
   timelineEvents: timeline.length,
   flowSteps: flow.length
 }));
+
