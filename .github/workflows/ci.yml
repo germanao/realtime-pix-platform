@@ -103,7 +103,7 @@ jobs:
       - name: Block obvious secret patterns
         shell: bash
         run: |
-          # A slash after Password= is a shell parser expression (for example sed), not a credential.
+          # A slash immediately after the assignment is a shell parser expression, not a credential.
           matches="$(git grep -n -I -E '([g]hp_|[g]ithub_pat_|[A]KIA|[A]Iza|[A]ccountKey=|[S]haredAccessKey=|[D]efaultEndpointsProtocol=|-----[B]EGIN (RSA |EC |OPENSSH |PRIVATE)|[p]ostgres://|[P]assword=[^<\$\{/]|[8]4221a3c|[f]1567d63|[k]v-realtime-pix-[0-9]+|[a]crpix[0-9]+)' -- . ':(exclude)apps/web/package-lock.json' || true)"
           if [ -n "$matches" ]; then
             echo "Potential secret or environment-specific value found:"
