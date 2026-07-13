@@ -218,6 +218,8 @@ public sealed class EfPresenceStore(IdentityPresenceDbContext dbContext) : IPres
         }
         else
         {
+            user.DisplayName = PresenceStore.CreateDisplayName(normalizedClientId);
+            user.IsBot = false;
             user.LastSeenAt = now;
         }
 
@@ -228,7 +230,8 @@ public sealed class EfPresenceStore(IdentityPresenceDbContext dbContext) : IPres
     {
         foreach (var bot in KnownBotUsers.All)
         {
-            if (!await dbContext.Users.AnyAsync(item => item.UserId == bot.UserId, cancellationToken))
+            var user = await dbContext.Users.SingleOrDefaultAsync(item => item.UserId == bot.UserId, cancellationToken);
+            if (user is null)
             {
                 dbContext.Users.Add(new PresenceUserEntity
                 {
@@ -237,6 +240,11 @@ public sealed class EfPresenceStore(IdentityPresenceDbContext dbContext) : IPres
                     IsBot = true,
                     LastSeenAt = DateTimeOffset.UtcNow
                 });
+            }
+            else
+            {
+                user.DisplayName = bot.DisplayName;
+                user.IsBot = true;
             }
         }
 
@@ -288,3 +296,4 @@ public sealed class IdentityPresenceDbContextFactory : IDesignTimeDbContextFacto
         return new IdentityPresenceDbContext(options);
     }
 }
+
