@@ -25,6 +25,8 @@ export type FlowProgress = {
   terminal: boolean;
 };
 
+export const flowPlaybackCompleteStage = 8;
+
 const idle = (): FlowNodeState => ({ status: "idle", evidence: "idle" });
 
 export function buildFlowProgress(flow: FlowStep[], transfer: Transfer | null): FlowProgress {
@@ -95,6 +97,64 @@ export function buildFlowProgress(flow: FlowStep[], transfer: Transfer | null): 
   return { nodes, activeEdgeIndex, terminal: completed || failed };
 }
 
+export function getAvailableFlowStage(flow: FlowStep[], transfer: Transfer | null) {
+  if (!transfer) {
+    return 0;
+  }
+
+  const eventTypes = new Set(flow.map((step) => step.eventType));
+  const requested = eventTypes.has("PixTransferRequested.v1");
+  const debitRecorded =
+    eventTypes.has("PixDebitSucceeded.v1") || eventTypes.has("PixDebitFailed.v1");
+  const creditRecorded = eventTypes.has("PixCreditSucceeded.v1");
+  const terminal =
+    eventTypes.has("PixTransferCompleted.v1") ||
+    eventTypes.has("PixTransferFailed.v1") ||
+    transfer.status === "completed" ||
+    transfer.status === "failed";
+
+  if (terminal) return flowPlaybackCompleteStage;
+  if (creditRecorded) return 5;
+  if (requested || debitRecorded) return 4;
+  return 2;
+}
+
+export function buildProceduralFlowProgress(
+  stage: number,
+  flow: FlowStep[],
+  transfer: Transfer
+): FlowProgress {
+  const finalProgress = buildFlowProgress(flow, transfer);
+  const nodes = Object.fromEntries(
+    (Object.keys(finalProgress.nodes) as FlowNodeId[]).map((nodeId) => [nodeId, idle()])
+  ) as Record<FlowNodeId, FlowNodeState>;
+  const safeStage = Math.min(Math.max(stage, 0), flowPlaybackCompleteStage);
+
+  primaryFlowNodes.forEach((nodeId, index) => {
+    if (index < safeStage || safeStage === flowPlaybackCompleteStage) {
+      const finalState = finalProgress.nodes[nodeId];
+      nodes[nodeId] = {
+        status: finalState.status === "failure" ? "failure" : "success",
+        evidence: finalState.evidence === "idle" ? "inferred" : finalState.evidence
+      };
+      return;
+    }
+
+    if (index === safeStage) {
+      nodes[nodeId] = {
+        status: "active",
+        evidence: index <= 2 ? "inferred" : "event"
+      };
+    }
+  });
+
+  return {
+    nodes,
+    activeEdgeIndex: safeStage === 0 ? -1 : Math.min(safeStage - 1, flowEdges.length - 1),
+    terminal: safeStage === flowPlaybackCompleteStage
+  };
+}
+
 export const flowEdges = [
   ["browser-start", "gateway"],
   ["gateway", "transaction-start"],
@@ -115,3 +175,4 @@ export const primaryFlowNodes: FlowNodeId[] = [
   "realtime",
   "browser-end"
 ];
+

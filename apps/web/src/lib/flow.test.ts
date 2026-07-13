@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildFlowProgress } from "./flow";
+import {
+  buildFlowProgress,
+  buildProceduralFlowProgress,
+  flowPlaybackCompleteStage,
+  getAvailableFlowStage
+} from "./flow";
 import type { FlowStep, Transfer } from "./types";
 
 const transfer: Transfer = {
@@ -93,4 +98,58 @@ describe("buildFlowProgress", () => {
     expect(credited.nodes["transaction-confirm"].status).toBe("active");
     expect(credited.nodes.realtime.status).toBe("active");
   });
+
+  it("reveals exactly one primary node at a time during playback", () => {
+    const completedTransfer = { ...transfer, status: "completed" as const };
+    const completedFlow = [
+      step("PixTransferRequested.v1", "2026-06-18T12:00:01Z"),
+      step("PixDebitSucceeded.v1", "2026-06-18T12:00:02Z"),
+      step("PixCreditSucceeded.v1", "2026-06-18T12:00:03Z"),
+      step("PixTransferCompleted.v1", "2026-06-18T12:00:04Z")
+    ];
+
+    const beginning = buildProceduralFlowProgress(0, completedFlow, completedTransfer);
+    expect(beginning.nodes["browser-start"].status).toBe("active");
+    expect(beginning.nodes.gateway.status).toBe("idle");
+    expect(beginning.nodes["transaction-confirm"].status).toBe("idle");
+    expect(beginning.nodes["browser-end"].status).toBe("idle");
+
+    const middle = buildProceduralFlowProgress(4, completedFlow, completedTransfer);
+    expect(middle.nodes["event-bus"].status).toBe("success");
+    expect(middle.nodes.wallet.status).toBe("active");
+    expect(middle.nodes["transaction-confirm"].status).toBe("idle");
+    expect(middle.nodes["browser-end"].status).toBe("idle");
+
+    const end = buildProceduralFlowProgress(
+      flowPlaybackCompleteStage,
+      completedFlow,
+      completedTransfer
+    );
+    expect(end.terminal).toBe(true);
+    expect(end.nodes["browser-start"].status).toBe("success");
+    expect(end.nodes["browser-end"].status).toBe("success");
+  });
+
+  it("waits for backend milestones before advancing the visual playback", () => {
+    expect(getAvailableFlowStage([], transfer)).toBe(2);
+    expect(
+      getAvailableFlowStage(
+        [step("PixTransferRequested.v1", "2026-06-18T12:00:01Z")],
+        transfer
+      )
+    ).toBe(4);
+    expect(
+      getAvailableFlowStage(
+        [
+          step("PixTransferRequested.v1", "2026-06-18T12:00:01Z"),
+          step("PixCreditSucceeded.v1", "2026-06-18T12:00:03Z")
+        ],
+        transfer
+      )
+    ).toBe(5);
+    expect(getAvailableFlowStage([], { ...transfer, status: "completed" })).toBe(
+      flowPlaybackCompleteStage
+    );
+  });
 });
+
