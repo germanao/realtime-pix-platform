@@ -216,30 +216,6 @@ public sealed class InMemoryPresenceStoreAdapter(PresenceStore inner) : IPresenc
 
 public sealed class PresenceStore
 {
-    private static readonly string[] Adjectives =
-    [
-        "Azure",
-        "Crimson",
-        "Indigo",
-        "Silver",
-        "Golden",
-        "Emerald",
-        "Ruby",
-        "Amber"
-    ];
-
-    private static readonly string[] Nouns =
-    [
-        "Ledger",
-        "Signal",
-        "Vector",
-        "Circuit",
-        "Harbor",
-        "Pixel",
-        "Matrix",
-        "Quartz"
-    ];
-
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, PresenceUser> _users = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _connectionToUser = new(StringComparer.OrdinalIgnoreCase);
@@ -372,6 +348,7 @@ public sealed class PresenceStore
     {
         if (_users.TryGetValue(userId, out var existing))
         {
+            existing.DisplayName = displayName;
             existing.LastSeenAt = now;
             return existing;
         }
@@ -403,8 +380,7 @@ public sealed class PresenceStore
 
     public static string CreateDisplayName(string clientId)
     {
-        var score = clientId.Sum(character => character);
-        return $"{Adjectives[score % Adjectives.Length]} {Nouns[(score / Adjectives.Length) % Nouns.Length]}";
+        return AnonymousDisplayNames.Create(clientId);
     }
 
     private sealed class PresenceUser(
@@ -415,7 +391,7 @@ public sealed class PresenceStore
         DateTimeOffset lastSeenAt)
     {
         public string UserId { get; } = UserId;
-        public string DisplayName { get; } = DisplayName;
+        public string DisplayName { get; set; } = DisplayName;
         public string? ClientId { get; } = ClientId;
         public bool IsBot { get; } = IsBot;
         public DateTimeOffset LastSeenAt { get; set; } = lastSeenAt;
@@ -515,3 +491,4 @@ public static class IdentityPresenceServiceMetadata
 {
     public const string Name = "identity-presence-service";
 }
+

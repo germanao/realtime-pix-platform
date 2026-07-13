@@ -1,3 +1,4 @@
+using RealtimePix.Contracts;
 using Xunit;
 
 public sealed class PresenceStoreTests
@@ -49,4 +50,39 @@ public sealed class PresenceStoreTests
         Assert.DoesNotContain(activeUsers, user => user.UserId == result.Session.UserId);
         Assert.Contains(activeUsers, user => user.IsBot && user.IsOnline);
     }
+
+    [Fact]
+    public void Every_known_bot_name_has_the_required_suffix()
+    {
+        Assert.NotEmpty(KnownBotUsers.All);
+        Assert.All(KnownBotUsers.All, bot => Assert.EndsWith(" [BOT]", bot.DisplayName));
+    }
+
+    [Fact]
+    public void Anonymous_name_catalog_has_thirty_unique_players_from_each_sport()
+    {
+        Assert.Equal(30, AnonymousDisplayNames.FootballWorldCup2026.Count);
+        Assert.Equal(30, AnonymousDisplayNames.Nfl.Count);
+        Assert.Equal(30, AnonymousDisplayNames.Nba.Count);
+        Assert.Equal(90, AnonymousDisplayNames.AthleteNames.Count);
+        Assert.Equal(
+            90,
+            AnonymousDisplayNames.AthleteNames.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    public void Anonymous_name_is_stable_and_uses_an_athlete_prefix()
+    {
+        var first = PresenceStore.CreateDisplayName("stable-client");
+        var second = PresenceStore.CreateDisplayName("stable-client");
+
+        Assert.Equal(first, second);
+        Assert.Contains(
+            AnonymousDisplayNames.AthleteNames,
+            athlete => first.StartsWith($"{athlete} ", StringComparison.Ordinal));
+        Assert.Contains(
+            AnonymousDisplayNames.Suffixes,
+            suffix => first.EndsWith($" {suffix}", StringComparison.Ordinal));
+    }
 }
+

@@ -6,9 +6,9 @@ public static class KnownBotUsers
 {
     public static readonly IReadOnlyList<BotUserDescriptor> All =
     [
-        new("bot-aurora-ledger", "Aurora Ledger"),
-        new("bot-indigo-pix", "Indigo PIX"),
-        new("bot-silver-signal", "Silver Signal")
+        new("bot-aurora-ledger", "Aurora Ledger [BOT]"),
+        new("bot-indigo-pix", "Indigo PIX [BOT]"),
+        new("bot-silver-signal", "Silver Signal [BOT]")
     ];
 }
 
