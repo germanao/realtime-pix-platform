@@ -28,8 +28,11 @@ import {
 } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  buildProceduralFlowProgress,
   buildFlowProgress,
   flowEdges,
+  flowPlaybackCompleteStage,
+  getAvailableFlowStage,
   primaryFlowNodes,
   type FlowNodeId,
   type FlowNodeStatus
@@ -193,12 +196,7 @@ function ServiceNode({ data }: NodeProps<ServiceFlowNode>) {
 }
 
 const nodeTypes = { service: ServiceNode };
-
-function orderedFlow(flow: FlowStep[]) {
-  return [...flow].sort(
-    (left, right) => new Date(left.recordedAt).getTime() - new Date(right.recordedAt).getTime()
-  );
-}
+const playbackStepMilliseconds = 1200;
 
 export function TransactionMap({
   expertMode,
@@ -208,37 +206,68 @@ export function TransactionMap({
   onReplay
 }: TransactionMapProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<FlowNodeId>("transaction-start");
-  const [replayLimit, setReplayLimit] = useState<number | null>(null);
+  const [playbackStage, setPlaybackStage] = useState<number | null>(null);
   const previousReplayKey = useRef(replayKey);
+  const playbackStageRef = useRef<number | null>(null);
+  const latestFlowRef = useRef(flow);
+  const latestTransferRef = useRef(transfer);
+
+  latestFlowRef.current = flow;
+  latestTransferRef.current = transfer;
 
   useEffect(() => {
     if (previousReplayKey.current === replayKey) {
       return;
     }
     previousReplayKey.current = replayKey;
-    const snapshotLength = flow.length;
-    if (!snapshotLength || !transfer || (transfer.status !== "completed" && transfer.status !== "failed")) {
-      setReplayLimit(null);
+    if (!latestTransferRef.current) {
+      playbackStageRef.current = null;
+      setPlaybackStage(null);
       return;
     }
 
-    setReplayLimit(0);
-    let current = 0;
+    playbackStageRef.current = 0;
+    setPlaybackStage(0);
+    let finishTimeout: number | undefined;
     const interval = window.setInterval(() => {
-      current += 1;
-      setReplayLimit(current);
-      if (current >= snapshotLength) {
-        window.clearInterval(interval);
-        window.setTimeout(() => setReplayLimit(null), 500);
+      const currentStage = playbackStageRef.current;
+      const currentTransfer = latestTransferRef.current;
+      if (currentStage === null || !currentTransfer) {
+        return;
       }
-    }, 650);
-    return () => window.clearInterval(interval);
-  }, [flow, replayKey, transfer]);
 
-  const displayedFlow = replayLimit === null ? flow : orderedFlow(flow).slice(0, replayLimit);
+      const availableStage = getAvailableFlowStage(latestFlowRef.current, currentTransfer);
+      if (currentStage >= availableStage) {
+        return;
+      }
+
+      const nextStage = currentStage + 1;
+      playbackStageRef.current = nextStage;
+      setPlaybackStage(nextStage);
+
+      if (nextStage === flowPlaybackCompleteStage) {
+        window.clearInterval(interval);
+        finishTimeout = window.setTimeout(() => {
+          playbackStageRef.current = null;
+          setPlaybackStage(null);
+        }, playbackStepMilliseconds);
+      }
+    }, playbackStepMilliseconds);
+
+    return () => {
+      window.clearInterval(interval);
+      if (finishTimeout !== undefined) {
+        window.clearTimeout(finishTimeout);
+      }
+    };
+  }, [replayKey]);
+
   const progress = useMemo(
-    () => buildFlowProgress(displayedFlow, transfer),
-    [displayedFlow, transfer]
+    () =>
+      playbackStage !== null && transfer
+        ? buildProceduralFlowProgress(playbackStage, flow, transfer)
+        : buildFlowProgress(flow, transfer),
+    [flow, playbackStage, transfer]
   );
   const labels = expertMode ? expertFlowLabels : simpleFlowLabels;
 
@@ -304,7 +333,7 @@ export function TransactionMap({
     ];
   }, [progress]);
 
-  const selectedSteps = displayedFlow.filter((step) => {
+  const selectedSteps = flow.filter((step) => {
     if (selectedNodeId === "wallet") return step.stage === "wallet-ledger-service";
     if (selectedNodeId === "transaction-start") {
       return step.eventType === "PixTransferRequested.v1";
@@ -408,3 +437,4 @@ export function TransactionMap({
     </section>
   );
 }
+
