@@ -558,7 +558,7 @@ resource "azurerm_container_app" "api_gateway" {
   }
 
   template {
-    min_replicas = 0
+    min_replicas = 1
     max_replicas = 2
 
     container {
