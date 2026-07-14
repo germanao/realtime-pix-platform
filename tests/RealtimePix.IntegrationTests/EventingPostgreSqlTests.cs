@@ -27,7 +27,14 @@ public sealed class EventingPostgreSqlTests(PostgreSqlFixture postgres)
         try
         {
             await Task.WhenAll(dispatchers.Select(item => item.StartAsync(CancellationToken.None)));
-            await WaitUntilAsync(() => Task.FromResult(transport.UniqueMessageCount == eventIds.Length), TimeSpan.FromSeconds(30));
+            await WaitUntilAsync(
+                async () =>
+                {
+                    await using var context = CreateContext(connectionString);
+                    return await context.Set<IntegrationOutboxMessage>()
+                        .CountAsync(item => item.Status == "published" && item.PublishedAt != null) == eventIds.Length;
+                },
+                TimeSpan.FromSeconds(30));
         }
         finally
         {
