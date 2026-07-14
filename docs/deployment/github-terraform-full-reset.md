@@ -144,7 +144,7 @@ terraform init \
   -backend-config="resource_group_name=$TFSTATE_RESOURCE_GROUP" \
   -backend-config="storage_account_name=$TFSTATE_STORAGE_ACCOUNT" \
   -backend-config="container_name=$TFSTATE_CONTAINER" \
-  -backend-config="key=foundation-poc.tfstate" \
+  -backend-config="key=poc/foundation.tfstate" \
   -backend-config="use_azuread_auth=true"
 
 terraform apply \
@@ -221,7 +221,7 @@ terraform init \
   -backend-config="resource_group_name=$TFSTATE_RESOURCE_GROUP" \
   -backend-config="storage_account_name=$TFSTATE_STORAGE_ACCOUNT" \
   -backend-config="container_name=$TFSTATE_CONTAINER" \
-  -backend-config="key=runtime-poc.tfstate" \
+  -backend-config="key=poc/runtime.tfstate" \
   -backend-config="use_azuread_auth=true"
 
 terraform apply \

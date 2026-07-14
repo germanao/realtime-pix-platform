@@ -6,12 +6,12 @@ resource "azurerm_user_assigned_identity" "this" {
 }
 
 resource "azurerm_federated_identity_credential" "this" {
-  for_each  = var.subjects
-  name      = each.value.name
-  parent_id = azurerm_user_assigned_identity.this.id
-  audience  = ["api://AzureADTokenExchange"]
-  issuer    = "https://token.actions.githubusercontent.com"
-  subject   = each.value.subject
+  for_each                  = var.subjects
+  name                      = each.value.name
+  user_assigned_identity_id = azurerm_user_assigned_identity.this.id
+  audience                  = ["api://AzureADTokenExchange"]
+  issuer                    = "https://token.actions.githubusercontent.com"
+  subject                   = each.value.subject
 }
 
 resource "azurerm_role_assignment" "this" {

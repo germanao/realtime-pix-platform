@@ -6,9 +6,9 @@ Terraform and GitHub Actions are the current deployment path. The Azure Portal/A
 
 1. Apply `infra/terraform/bootstrap` locally once for a new Azure environment.
 2. Migrate bootstrap state with `scripts/cloud/migrate-bootstrap-state.sh`.
-3. For an existing environment, run `infrastructure-apply.yml` with operation `plan`, stack `bootstrap`, and confirmation `plan-poc`; review the plan before running the matching `apply`/`apply-poc` operation.
-4. Run `scripts/cloud/migrate-environment-state-keys.sh` once if old POC state keys exist.
-5. Bootstrap apply synchronizes the non-secret GitHub variables. The local alternative is `scripts/cloud/bootstrap-github-variables.sh`.
+3. For an existing environment, authenticate locally as the subscription owner and review/apply bootstrap changes from `infra/terraform/bootstrap`. GitHub Actions never manages its own OIDC identities or permissions.
+4. Run `scripts/cloud/bootstrap-github-variables.sh` to synchronize the resulting non-secret GitHub variables.
+5. Run `scripts/cloud/migrate-environment-state-keys.sh` once if old POC state keys exist.
 6. Run `infrastructure-apply.yml` with operation `plan` before an approved `apply` for foundation changes.
 7. Run `deploy-poc.yml` to build immutable images, apply runtime, configure Entra database principals, run EF migrations, execute cloud Saga smoke tests, and synchronize Vercel variables.
 
@@ -28,13 +28,14 @@ GitHub environment `poc` requires:
 - `PUBLISHER_EMAIL`
 - secret `VERCEL_API_TOKEN`
 
-Trusted pull-request plans require repository-scoped `AZURE_PLAN_CLIENT_ID`, tenant/subscription identifiers, Terraform backend identifiers, and `PUBLISHER_EMAIL`. Bootstrap apply or the helper script writes these non-secret values; the plan identity has Reader and Blob Data Reader roles only.
+Trusted pull-request plans require repository-scoped `AZURE_PLAN_CLIENT_ID`, tenant/subscription identifiers, Terraform backend identifiers, and `PUBLISHER_EMAIL`. The owner-run helper script writes these non-secret values after bootstrap apply; the plan identity has Reader and Blob Data Reader roles only.
 
 Use exact names emitted by Terraform outputs and `scripts/cloud/bootstrap-github-variables.sh`; never commit values.
 
 ## Operational Rules
 
-- Infrastructure apply and destroy require the protected `poc` environment.
+- Bootstrap is owner-operated; GitHub cannot create or expand its own Azure permissions.
+- Foundation/runtime apply and destroy require the protected `poc` environment.
 - Deployment concurrency queues; it does not cancel a state-writing run.
 - Database firewall access is temporary and removed in unconditional cleanup.
 - EF migrations run before revisions are restarted.
