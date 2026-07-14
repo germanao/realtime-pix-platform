@@ -16,7 +16,7 @@ jobs:
     name: Static Terraform validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.11.4
@@ -74,7 +74,7 @@ jobs:
       TF_VAR_tfstate_container_name: ${{ vars.TFSTATE_CONTAINER }}
       TF_VAR_publisher_email: ${{ vars.PUBLISHER_EMAIL || 'showcase@example.invalid' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_PLAN_CLIENT_ID }}

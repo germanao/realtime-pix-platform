@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: poc
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_APPLY_CLIENT_ID || vars.AZURE_CLIENT_ID }}
