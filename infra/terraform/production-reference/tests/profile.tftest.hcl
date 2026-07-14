@@ -62,7 +62,11 @@ run "production_reference_security_contract" {
   }
 
   assert {
-    condition     = azurerm_key_vault.this.purge_protection_enabled && !azurerm_key_vault.this.public_network_access_enabled
-    error_message = "Production Key Vault must use purge protection and private network access."
+    condition = (
+      azurerm_key_vault.this.purge_protection_enabled &&
+      !azurerm_key_vault.this.public_network_access_enabled &&
+      one(azurerm_key_vault.this.network_acls).default_action == "Deny"
+    )
+    error_message = "Production Key Vault must use purge protection, private access, and a deny-by-default firewall."
   }
 }

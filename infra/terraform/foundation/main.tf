@@ -220,6 +220,11 @@ resource "azurerm_key_vault" "main" {
   purge_protection_enabled      = false
   public_network_access_enabled = true
   tags                          = local.common_tags
+
+  network_acls {
+    bypass         = "AzureServices"
+    default_action = "Deny"
+  }
 }
 
 resource "azurerm_role_assignment" "current_user_keyvault_admin" {
