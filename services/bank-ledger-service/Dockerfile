@@ -1,0 +1,36 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG BUILD_CONFIGURATION=Release
+WORKDIR /src
+
+COPY ["Directory.Build.props", "."]
+COPY ["Directory.Packages.props", "."]
+COPY ["global.json", "."]
+COPY ["contracts/dotnet/RealtimePix.Contracts/RealtimePix.Contracts.csproj", "contracts/dotnet/RealtimePix.Contracts/"]
+COPY ["building-blocks/dotnet/RealtimePix.Eventing/RealtimePix.Eventing.csproj", "building-blocks/dotnet/RealtimePix.Eventing/"]
+COPY ["building-blocks/dotnet/RealtimePix.Persistence/RealtimePix.Persistence.csproj", "building-blocks/dotnet/RealtimePix.Persistence/"]
+COPY ["services/bank-ledger-service/BankLedger.Domain/BankLedger.Domain.csproj", "services/bank-ledger-service/BankLedger.Domain/"]
+COPY ["services/bank-ledger-service/BankLedger.Application/BankLedger.Application.csproj", "services/bank-ledger-service/BankLedger.Application/"]
+COPY ["services/bank-ledger-service/BankLedger.Infrastructure/BankLedger.Infrastructure.csproj", "services/bank-ledger-service/BankLedger.Infrastructure/"]
+COPY ["services/bank-ledger-service/BankLedger.Api/BankLedger.Api.csproj", "services/bank-ledger-service/BankLedger.Api/"]
+RUN dotnet restore "services/bank-ledger-service/BankLedger.Api/BankLedger.Api.csproj"
+
+COPY ["contracts/dotnet/RealtimePix.Contracts/", "contracts/dotnet/RealtimePix.Contracts/"]
+COPY ["building-blocks/dotnet/RealtimePix.Eventing/", "building-blocks/dotnet/RealtimePix.Eventing/"]
+COPY ["building-blocks/dotnet/RealtimePix.Persistence/", "building-blocks/dotnet/RealtimePix.Persistence/"]
+COPY ["services/bank-ledger-service/", "services/bank-ledger-service/"]
+RUN dotnet publish "services/bank-ledger-service/BankLedger.Api/BankLedger.Api.csproj" \
+    --configuration "$BUILD_CONFIGURATION" \
+    --no-restore \
+    --output /app/publish \
+    /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    ASPNETCORE_HTTP_PORTS=8080 \
+    DOTNET_ENVIRONMENT=Production \
+    EventBus__Directory=/tmp/realtime-pix-bus
+EXPOSE 8080
+COPY --from=build /app/publish .
+USER $APP_UID
+ENTRYPOINT ["dotnet", "BankLedger.Api.dll"]

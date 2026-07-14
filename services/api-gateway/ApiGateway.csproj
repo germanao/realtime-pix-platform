@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
-  <ItemGroup>
-    <ProjectReference Include="..\..\building-blocks\dotnet\RealtimePix.Eventing\RealtimePix.Eventing.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.5.0" />
-  </ItemGroup>
-</Project>
-

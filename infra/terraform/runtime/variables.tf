@@ -37,9 +37,45 @@ variable "app_config_label" {
 }
 
 variable "allowed_cors_origins" {
-  description = "CORS origins allowed by public services."
+  description = "Exact CORS origins allowed by public services. Preview hosts are controlled separately."
   type        = list(string)
-  default     = ["http://localhost:3000", "https://realtime-pix-web.vercel.app", "https://realtime-pix-web*.vercel.app"]
+  default     = ["http://localhost:3000", "https://realtime-pix-web.vercel.app"]
+
+  validation {
+    condition = length(var.allowed_cors_origins) > 0 && alltrue([
+      for origin in var.allowed_cors_origins : origin == "http://localhost:3000" ||
+      can(regex("^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$", origin))
+    ])
+    error_message = "Runtime CORS origins must contain at least one exact HTTPS host origin or http://localhost:3000; use allow_vercel_previews for previews."
+  }
+}
+
+variable "allow_vercel_previews" {
+  description = "Allow preview hosts belonging to the realtime-pix-web Vercel project."
+  type        = bool
+  default     = true
+}
+
+variable "vercel_preview_project_name" {
+  description = "Vercel project-name component used in generated preview deployment hosts."
+  type        = string
+  default     = "realtime-pix"
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.vercel_preview_project_name))
+    error_message = "vercel_preview_project_name must be a lowercase DNS label."
+  }
+}
+
+variable "vercel_preview_scope_slug" {
+  description = "Vercel account/team scope slug that owns the preview deployment hosts."
+  type        = string
+  default     = "germanaos-projects"
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.vercel_preview_scope_slug))
+    error_message = "vercel_preview_scope_slug must be a lowercase DNS label."
+  }
 }
 
 variable "tags" {

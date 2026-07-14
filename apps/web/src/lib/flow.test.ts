@@ -53,8 +53,9 @@ describe("buildFlowProgress", () => {
     const result = buildFlowProgress(flow, transfer);
 
     expect(result.terminal).toBe(true);
-    expect(result.activeEdgeIndex).toBe(6);
-    expect(result.nodes.wallet.status).toBe("success");
+    expect(result.activeEdgeIndex).toBe(7);
+    expect(result.nodes["sender-bank"].status).toBe("success");
+    expect(result.nodes["recipient-bank"].status).toBe("success");
     expect(result.nodes["transaction-start"].status).toBe("success");
     expect(result.nodes["transaction-confirm"].status).toBe("success");
     expect(result.nodes["browser-end"].status).toBe("success");
@@ -70,7 +71,8 @@ describe("buildFlowProgress", () => {
 
     const result = buildFlowProgress(flow, failedTransfer);
 
-    expect(result.nodes.wallet.status).toBe("failure");
+    expect(result.nodes["sender-bank"].status).toBe("failure");
+    expect(result.nodes["recipient-bank"].status).toBe("idle");
     expect(result.nodes["transaction-start"].status).toBe("success");
     expect(result.nodes["transaction-confirm"].status).toBe("failure");
     expect(result.nodes["browser-end"].status).toBe("failure");
@@ -83,7 +85,7 @@ describe("buildFlowProgress", () => {
     );
     expect(requested.nodes["transaction-start"].status).toBe("success");
     expect(requested.nodes["event-bus"].status).toBe("active");
-    expect(requested.nodes.wallet.status).toBe("active");
+    expect(requested.nodes["sender-bank"].status).toBe("active");
     expect(requested.nodes["transaction-confirm"].status).toBe("idle");
 
     const credited = buildFlowProgress(
@@ -94,7 +96,8 @@ describe("buildFlowProgress", () => {
       ],
       transfer
     );
-    expect(credited.nodes.wallet.status).toBe("success");
+    expect(credited.nodes["sender-bank"].status).toBe("success");
+    expect(credited.nodes["recipient-bank"].status).toBe("success");
     expect(credited.nodes["transaction-confirm"].status).toBe("active");
     expect(credited.nodes.realtime.status).toBe("active");
   });
@@ -116,7 +119,7 @@ describe("buildFlowProgress", () => {
 
     const middle = buildProceduralFlowProgress(4, completedFlow, completedTransfer);
     expect(middle.nodes["event-bus"].status).toBe("success");
-    expect(middle.nodes.wallet.status).toBe("active");
+    expect(middle.nodes["sender-bank"].status).toBe("active");
     expect(middle.nodes["transaction-confirm"].status).toBe("idle");
     expect(middle.nodes["browser-end"].status).toBe("idle");
 
@@ -146,10 +149,9 @@ describe("buildFlowProgress", () => {
         ],
         transfer
       )
-    ).toBe(5);
+    ).toBe(6);
     expect(getAvailableFlowStage([], { ...transfer, status: "completed" })).toBe(
       flowPlaybackCompleteStage
     );
   });
 });
-

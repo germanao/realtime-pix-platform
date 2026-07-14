@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
@@ -8,9 +9,13 @@ namespace RealtimePix.Eventing;
 public sealed class ServiceBusIntegrationEventPublisher(
     ServiceBusClient client,
     IOptions<ServiceBusEventBusOptions> options,
-    ILogger<ServiceBusIntegrationEventPublisher> logger) : IIntegrationEventPublisher, IAsyncDisposable
+    ILogger<ServiceBusIntegrationEventPublisher> logger) :
+    IIntegrationEventPublisher,
+    IIntegrationMessagePublisher,
+    IIntegrationEnvelopeTransport,
+    IAsyncDisposable
 {
-    private readonly ServiceBusSender _sender = client.CreateSender(options.Value.TopicName);
+    private readonly ConcurrentDictionary<string, ServiceBusSender> _senders = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task PublishAsync<TPayload>(
         string eventType,
@@ -21,18 +26,41 @@ public sealed class ServiceBusIntegrationEventPublisher(
         string? causationId = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(producer);
-
-        var envelope = new EventEnvelope(
-            Guid.NewGuid(),
+        var envelope = IntegrationMessageFactory.Create(
             eventType,
             version,
-            DateTimeOffset.UtcNow,
-            correlationId ?? Guid.NewGuid().ToString("N"),
-            causationId,
             producer,
-            JsonSerializer.SerializeToElement(payload, JsonDefaults.Options));
+            payload,
+            IntegrationMessageKind.Event,
+            IntegrationMessageDestination.Topic(options.Value.TopicName),
+            subject: null,
+            correlationId,
+            causationId);
+
+        await PublishEnvelopeAsync(envelope, cancellationToken);
+    }
+
+    public async Task PublishCommandAsync<TPayload>(
+        string queueName,
+        string messageType,
+        int version,
+        string producer,
+        TPayload payload,
+        string? subject = null,
+        string? correlationId = null,
+        string? causationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var envelope = IntegrationMessageFactory.Create(
+            messageType,
+            version,
+            producer,
+            payload,
+            IntegrationMessageKind.Command,
+            IntegrationMessageDestination.Queue(queueName),
+            subject,
+            correlationId,
+            causationId);
 
         await PublishEnvelopeAsync(envelope, cancellationToken);
     }
@@ -51,17 +79,29 @@ public sealed class ServiceBusIntegrationEventPublisher(
         message.ApplicationProperties["eventType"] = envelope.EventType;
         message.ApplicationProperties["version"] = envelope.Version;
         message.ApplicationProperties["producer"] = envelope.Producer;
+        message.ApplicationProperties["messageKind"] = envelope.MessageKind;
+        message.ApplicationProperties["destinationKind"] = envelope.DestinationKind;
         if (!string.IsNullOrWhiteSpace(envelope.CausationId))
         {
             message.ApplicationProperties["causationId"] = envelope.CausationId;
         }
 
-        await _sender.SendMessageAsync(message, cancellationToken);
-        logger.LogInformation("Published Service Bus integration event {EventType} {EventId}", envelope.EventType, envelope.EventId);
+        var destination = envelope.Destination ?? options.Value.TopicName;
+        var sender = _senders.GetOrAdd(destination, client.CreateSender);
+        await sender.SendMessageAsync(message, cancellationToken);
+        logger.LogInformation(
+            "Published Service Bus {MessageKind} {EventType} {EventId} to {Destination}",
+            envelope.MessageKind,
+            envelope.EventType,
+            envelope.EventId,
+            destination);
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _sender.DisposeAsync();
+        foreach (var sender in _senders.Values)
+        {
+            await sender.DisposeAsync();
+        }
     }
 }

@@ -36,4 +36,3 @@ describe("api", () => {
     expect(new Headers(request.headers).get("content-type")).toBe("application/json");
   });
 });
-

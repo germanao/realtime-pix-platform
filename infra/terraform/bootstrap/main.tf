@@ -12,6 +12,7 @@ locals {
   tfstate_container       = "tfstate"
   github_subject_env      = "repo:${var.github_owner}/${var.github_repository}:environment:${var.github_environment_name}"
   github_subject_branch   = "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/${var.github_branch}"
+  github_subject_pr       = "repo:${var.github_owner}/${var.github_repository}:pull_request"
   common_tags             = merge(var.tags, { suffix = local.suffix })
 }
 
@@ -27,84 +28,102 @@ resource "azurerm_resource_group" "app" {
   tags     = local.common_tags
 }
 
-resource "azurerm_storage_account" "tfstate" {
-  name                            = substr(local.tfstate_storage_account, 0, 24)
-  resource_group_name             = azurerm_resource_group.tfstate.name
-  location                        = azurerm_resource_group.tfstate.location
-  account_tier                    = "Standard"
-  account_replication_type        = "LRS"
-  min_tls_version                 = "TLS1_2"
-  allow_nested_items_to_be_public = false
-  shared_access_key_enabled       = true
-  tags                            = local.common_tags
+module "state_backend" {
+  source = "../modules/state-backend"
 
-  blob_properties {
-    versioning_enabled  = true
-    change_feed_enabled = true
-    delete_retention_policy {
-      days = 7
-    }
-    container_delete_retention_policy {
-      days = 7
-    }
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  storage_account_name = substr(local.tfstate_storage_account, 0, 24)
+  resource_group_name  = azurerm_resource_group.tfstate.name
+  location             = azurerm_resource_group.tfstate.location
+  container_name       = local.tfstate_container
+  retention_days       = 7
+  tags                 = local.common_tags
 }
 
-resource "azurerm_storage_container" "tfstate" {
-  name                  = local.tfstate_container
-  storage_account_id    = azurerm_storage_account.tfstate.id
-  container_access_type = "private"
+module "github_apply" {
+  source = "../modules/github-oidc"
 
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "azurerm_user_assigned_identity" "github_actions" {
   name                = "id-${var.project_name}-github-${var.environment_name}"
   resource_group_name = azurerm_resource_group.app.name
   location            = azurerm_resource_group.app.location
-  tags                = local.common_tags
+  subjects = {
+    environment = {
+      name    = "github-${var.github_environment_name}"
+      subject = local.github_subject_env
+    }
+    branch = {
+      name    = "github-${var.github_branch}"
+      subject = local.github_subject_branch
+    }
+  }
+  role_assignments = {
+    tfstate = {
+      scope                = module.state_backend.storage_account_id
+      role_definition_name = "Storage Blob Data Contributor"
+    }
+    app_contributor = {
+      scope                = azurerm_resource_group.app.id
+      role_definition_name = "Contributor"
+    }
+    app_rbac = {
+      scope                = azurerm_resource_group.app.id
+      role_definition_name = "Role Based Access Control Administrator"
+    }
+  }
+  tags = local.common_tags
 }
 
-resource "azurerm_federated_identity_credential" "github_environment" {
-  name                = "github-${var.github_environment_name}"
+module "github_plan" {
+  source = "../modules/github-oidc"
+
+  name                = "id-${var.project_name}-github-plan-${var.environment_name}"
   resource_group_name = azurerm_resource_group.app.name
-  parent_id           = azurerm_user_assigned_identity.github_actions.id
-  audience            = ["api://AzureADTokenExchange"]
-  issuer              = "https://token.actions.githubusercontent.com"
-  subject             = local.github_subject_env
+  location            = azurerm_resource_group.app.location
+  subjects = {
+    pull_request = {
+      name    = "github-pull-request-plan"
+      subject = local.github_subject_pr
+    }
+    branch = {
+      name    = "github-${var.github_branch}-plan"
+      subject = local.github_subject_branch
+    }
+  }
+  role_assignments = {
+    tfstate = {
+      scope                = module.state_backend.storage_account_id
+      role_definition_name = "Storage Blob Data Reader"
+    }
+    app_reader = {
+      scope                = azurerm_resource_group.app.id
+      role_definition_name = "Reader"
+    }
+  }
+  tags = merge(local.common_tags, { responsibility = "terraform-plan" })
 }
 
-resource "azurerm_federated_identity_credential" "github_main_branch" {
-  name                = "github-${var.github_branch}"
+module "github_image_push" {
+  source = "../modules/github-oidc"
+
+  name                = "id-${var.project_name}-github-images-${var.environment_name}"
   resource_group_name = azurerm_resource_group.app.name
-  parent_id           = azurerm_user_assigned_identity.github_actions.id
-  audience            = ["api://AzureADTokenExchange"]
-  issuer              = "https://token.actions.githubusercontent.com"
-  subject             = local.github_subject_branch
-}
-
-resource "azurerm_role_assignment" "github_tfstate_blob_contributor" {
-  scope                = azurerm_storage_account.tfstate.id
-  role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = azurerm_user_assigned_identity.github_actions.principal_id
-}
-
-resource "azurerm_role_assignment" "github_app_contributor" {
-  scope                = azurerm_resource_group.app.id
-  role_definition_name = "Contributor"
-  principal_id         = azurerm_user_assigned_identity.github_actions.principal_id
-}
-
-resource "azurerm_role_assignment" "github_app_rbac_administrator" {
-  scope                = azurerm_resource_group.app.id
-  role_definition_name = "Role Based Access Control Administrator"
-  principal_id         = azurerm_user_assigned_identity.github_actions.principal_id
+  location            = azurerm_resource_group.app.location
+  subjects = {
+    environment = {
+      name    = "github-${var.github_environment_name}-images"
+      subject = local.github_subject_env
+    }
+  }
+  role_assignments = {
+    tfstate = {
+      scope                = module.state_backend.storage_account_id
+      role_definition_name = "Storage Blob Data Reader"
+    }
+    app_reader = {
+      scope                = azurerm_resource_group.app.id
+      role_definition_name = "Reader"
+    }
+  }
+  tags = merge(local.common_tags, { responsibility = "container-image-push" })
 }
 
 resource "azurerm_consumption_budget_subscription" "project" {
@@ -139,4 +158,89 @@ resource "azurerm_consumption_budget_subscription" "project" {
     operator       = "GreaterThan"
     contact_emails = var.budget_contact_emails
   }
+}
+
+moved {
+  from = azurerm_storage_account.tfstate
+  to   = module.state_backend.azurerm_storage_account.this
+}
+
+moved {
+  from = azurerm_storage_container.tfstate
+  to   = module.state_backend.azurerm_storage_container.this
+}
+
+moved {
+  from = azurerm_user_assigned_identity.github_actions
+  to   = module.github_apply.azurerm_user_assigned_identity.this
+}
+
+moved {
+  from = azurerm_federated_identity_credential.github_environment
+  to   = module.github_apply.azurerm_federated_identity_credential.this["environment"]
+}
+
+moved {
+  from = azurerm_federated_identity_credential.github_main_branch
+  to   = module.github_apply.azurerm_federated_identity_credential.this["branch"]
+}
+
+moved {
+  from = azurerm_role_assignment.github_tfstate_blob_contributor
+  to   = module.github_apply.azurerm_role_assignment.this["tfstate"]
+}
+
+moved {
+  from = azurerm_role_assignment.github_app_contributor
+  to   = module.github_apply.azurerm_role_assignment.this["app_contributor"]
+}
+
+moved {
+  from = azurerm_role_assignment.github_app_rbac_administrator
+  to   = module.github_apply.azurerm_role_assignment.this["app_rbac"]
+}
+
+moved {
+  from = azurerm_user_assigned_identity.github_plan
+  to   = module.github_plan.azurerm_user_assigned_identity.this
+}
+
+moved {
+  from = azurerm_federated_identity_credential.github_plan_pull_request
+  to   = module.github_plan.azurerm_federated_identity_credential.this["pull_request"]
+}
+
+moved {
+  from = azurerm_federated_identity_credential.github_plan_main_branch
+  to   = module.github_plan.azurerm_federated_identity_credential.this["branch"]
+}
+
+moved {
+  from = azurerm_role_assignment.github_plan_tfstate_reader
+  to   = module.github_plan.azurerm_role_assignment.this["tfstate"]
+}
+
+moved {
+  from = azurerm_role_assignment.github_plan_app_reader
+  to   = module.github_plan.azurerm_role_assignment.this["app_reader"]
+}
+
+moved {
+  from = azurerm_user_assigned_identity.github_image_push
+  to   = module.github_image_push.azurerm_user_assigned_identity.this
+}
+
+moved {
+  from = azurerm_federated_identity_credential.github_image_environment
+  to   = module.github_image_push.azurerm_federated_identity_credential.this["environment"]
+}
+
+moved {
+  from = azurerm_role_assignment.github_image_tfstate_reader
+  to   = module.github_image_push.azurerm_role_assignment.this["tfstate"]
+}
+
+moved {
+  from = azurerm_role_assignment.github_image_app_reader
+  to   = module.github_image_push.azurerm_role_assignment.this["app_reader"]
 }

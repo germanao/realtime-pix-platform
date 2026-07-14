@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ApiGateway.Domain\ApiGateway.Domain.csproj" />
+  </ItemGroup>
+</Project>

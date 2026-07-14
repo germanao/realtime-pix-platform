@@ -11,6 +11,7 @@ import type {
   LedgerEntry,
   PresenceUser,
   Session,
+  SagaSimulationMode,
   TimelineEvent,
   Transfer,
   WalletBootstrap
@@ -23,9 +24,11 @@ export function useRealtimePixPlatform() {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [selectedRecipientId, setSelectedRecipientId] = useState("");
+  const [recipientAccounts, setRecipientAccounts] = useState<Account[]>([]);
   const [selectedRecipientAccountId, setSelectedRecipientAccountId] = useState("");
   const [amount, setAmount] = useState("25");
   const [amountChoice, setAmountChoice] = useState<"25" | "50" | "custom">("25");
+  const [simulationMode, setSimulationMode] = useState<SagaSimulationMode>("normal");
   const [depositInputs, setDepositInputs] = useState<DepositInputs>({});
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [transfer, setTransfer] = useState<Transfer | null>(null);
@@ -65,13 +68,13 @@ export function useRealtimePixPlatform() {
     transferIdRef.current = transfer?.transferId ?? null;
   }, [transfer?.transferId]);
 
-  const loadEntries = useCallback(async (userId: string, accountId: string) => {
-    if (!accountId) {
+  const loadEntries = useCallback(async (userId: string, account?: Account) => {
+    if (!account) {
       setEntries([]);
       return;
     }
     const nextEntries = await api<LedgerEntry[]>(
-      `/wallet/accounts/${encodeURIComponent(accountId)}/transactions?userId=${encodeURIComponent(userId)}`
+      `/wallet/accounts/${encodeURIComponent(account.accountId)}/transactions?userId=${encodeURIComponent(userId)}&bankId=${encodeURIComponent(account.bankId)}`
     );
     setEntries(nextEntries);
   }, []);
@@ -87,7 +90,7 @@ export function useRealtimePixPlatform() {
           : loaded.find((account) => account.bankName === "Bank A")?.accountId ?? loaded[0]?.accountId ?? "";
       setSelectedAccountId(accountId);
       selectedAccountIdRef.current = accountId;
-      await loadEntries(userId, accountId);
+      await loadEntries(userId, loaded.find((account) => account.accountId === accountId));
       return loaded;
     },
     [loadEntries]
@@ -296,15 +299,19 @@ export function useRealtimePixPlatform() {
       setSelectedAccountId(accountId);
       selectedAccountIdRef.current = accountId;
       if (sessionRef.current) {
-        await loadEntries(sessionRef.current.userId, accountId);
+        await loadEntries(
+          sessionRef.current.userId,
+          accounts.find((account) => account.accountId === accountId)
+        );
       }
     },
-    [loadEntries]
+    [accounts, loadEntries]
   );
 
   const selectRecipient = useCallback(async (userId: string) => {
     setSelectedRecipientId(userId);
     if (!userId) {
+      setRecipientAccounts([]);
       setSelectedRecipientAccountId("");
       return;
     }
@@ -313,6 +320,7 @@ export function useRealtimePixPlatform() {
     );
     const primary =
       recipientAccounts.find((account) => account.bankName === "Bank A") ?? recipientAccounts[0];
+    setRecipientAccounts(recipientAccounts);
     setSelectedRecipientAccountId(primary?.accountId ?? "");
   }, []);
 
@@ -332,7 +340,10 @@ export function useRealtimePixPlatform() {
     const senderAccount =
       accounts.find((account) => account.accountId === selectedAccountIdRef.current) ??
       accounts.find((account) => account.bankName === "Bank A");
-    if (!currentSession || !senderAccount || !selectedRecipientId || !selectedRecipientAccountId) {
+    const recipientAccount = recipientAccounts.find(
+      (account) => account.accountId === selectedRecipientAccountId
+    );
+    if (!currentSession || !senderAccount || !selectedRecipientId || !recipientAccount) {
       setError("Choose someone to receive your PIX.");
       return;
     }
@@ -355,9 +366,12 @@ export function useRealtimePixPlatform() {
           idempotencyKey: pendingTransferKeyRef.current,
           senderUserId: currentSession.userId,
           senderAccountId: senderAccount.accountId,
+          senderBankId: senderAccount.bankId,
           recipientUserId: selectedRecipientId,
-          recipientAccountId: selectedRecipientAccountId,
-          amount: Number(amount.replace(",", "."))
+          recipientAccountId: recipientAccount.accountId,
+          recipientBankId: recipientAccount.bankId,
+          amount: Number(amount.replace(",", ".")),
+          simulationMode
         })
       });
 
@@ -374,12 +388,17 @@ export function useRealtimePixPlatform() {
       isSendingRef.current = false;
       setIsSending(false);
     }
-  }, [accounts, amount, refresh, selectedRecipientAccountId, selectedRecipientId]);
+  }, [accounts, amount, recipientAccounts, refresh, selectedRecipientAccountId, selectedRecipientId, simulationMode]);
 
   const deposit = useCallback(
     async (accountId: string) => {
       const currentSession = sessionRef.current;
       if (!currentSession) {
+        return;
+      }
+      const account = accounts.find((item) => item.accountId === accountId);
+      if (!account) {
+        setError("Choose a valid account before depositing.");
         return;
       }
       const depositAmount = Number((depositInputs[accountId] || "0").replace(",", "."));
@@ -388,7 +407,7 @@ export function useRealtimePixPlatform() {
         return;
       }
 
-      await api(`/wallet/accounts/${encodeURIComponent(accountId)}/deposit`, {
+      await api(`/wallet/accounts/${encodeURIComponent(accountId)}/deposit?bankId=${encodeURIComponent(account.bankId)}`, {
         method: "POST",
         body: JSON.stringify({
           userId: currentSession.userId,
@@ -399,7 +418,7 @@ export function useRealtimePixPlatform() {
       setDepositInputs((current) => ({ ...current, [accountId]: "" }));
       await loadAccounts(currentSession.userId, accountId);
     },
-    [depositInputs, loadAccounts]
+    [accounts, depositInputs, loadAccounts]
   );
 
   const loadTransferJourney = useCallback(async (transferId: string) => {
@@ -425,9 +444,11 @@ export function useRealtimePixPlatform() {
     selectedAccountId,
     selectedRecipient,
     selectedRecipientId,
+    recipientAccounts,
     selectedRecipientAccountId,
     amount,
     amountChoice,
+    simulationMode,
     depositInputs,
     timeline,
     transfer,
@@ -438,6 +459,7 @@ export function useRealtimePixPlatform() {
     connectionState,
     replayKey,
     setAmount,
+    setSimulationMode,
     setSelectedRecipientAccountId,
     setDepositInputs,
     setError,

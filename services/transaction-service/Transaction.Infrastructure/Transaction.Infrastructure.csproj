@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Transaction.Application\Transaction.Application.csproj" />
+    <ProjectReference Include="..\..\..\building-blocks\dotnet\RealtimePix.Persistence\RealtimePix.Persistence.csproj" />
+    <ProjectReference Include="..\Transaction.Domain\Transaction.Domain.csproj" />
+    <ProjectReference Include="..\..\..\contracts\dotnet\RealtimePix.Contracts\RealtimePix.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\building-blocks\dotnet\RealtimePix.Eventing\RealtimePix.Eventing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+</Project>

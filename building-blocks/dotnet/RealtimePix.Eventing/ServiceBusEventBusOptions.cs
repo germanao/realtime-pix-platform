@@ -10,6 +10,8 @@ public sealed class ServiceBusEventBusOptions
 
     public string? SubscriptionName { get; set; }
 
+    public string? QueueName { get; set; }
+
     public string? ManagedIdentityClientId { get; set; }
 
     public int MaxConcurrentCalls { get; set; } = 1;

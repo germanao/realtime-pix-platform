@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\IdentityPresence.Domain\IdentityPresence.Domain.csproj" />
+  </ItemGroup>
+</Project>

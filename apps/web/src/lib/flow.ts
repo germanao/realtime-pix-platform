@@ -5,10 +5,12 @@ export type FlowNodeId =
   | "gateway"
   | "transaction-start"
   | "event-bus"
-  | "wallet"
+  | "sender-bank"
+  | "recipient-bank"
   | "transaction-confirm"
   | "realtime"
   | "browser-end"
+  | "compensation"
   | "presence"
   | "bots";
 
@@ -25,18 +27,31 @@ export type FlowProgress = {
   terminal: boolean;
 };
 
-export const flowPlaybackCompleteStage = 8;
+export const flowPlaybackCompleteStage = 9;
 
 const idle = (): FlowNodeState => ({ status: "idle", evidence: "idle" });
 
 export function buildFlowProgress(flow: FlowStep[], transfer: Transfer | null): FlowProgress {
   const eventTypes = new Set(flow.map((step) => step.eventType));
   const requested = eventTypes.has("PixTransferRequested.v1");
-  const debitSucceeded = eventTypes.has("PixDebitSucceeded.v1");
-  const debitFailed = eventTypes.has("PixDebitFailed.v1");
-  const creditSucceeded = eventTypes.has("PixCreditSucceeded.v1");
-  const completed = eventTypes.has("PixTransferCompleted.v1") || transfer?.status === "completed";
-  const failed = eventTypes.has("PixTransferFailed.v1") || transfer?.status === "failed";
+  const debitSucceeded = eventTypes.has("FundsDebited.v1") || eventTypes.has("PixDebitSucceeded.v1");
+  const debitFailed = eventTypes.has("FundsDebitRejected.v1") || eventTypes.has("PixDebitFailed.v1");
+  const creditSucceeded = eventTypes.has("FundsCredited.v1") || eventTypes.has("PixCreditSucceeded.v1");
+  const creditFailed = eventTypes.has("FundsCreditRejected.v1");
+  const refunded = eventTypes.has("FundsRefunded.v1") || transfer?.sagaState === "compensated";
+  const refundFailed = eventTypes.has("FundsRefundRejected.v1") || transfer?.sagaState === "manual_intervention";
+  const compensating = transfer?.sagaState === "compensation_pending";
+  const completed =
+    eventTypes.has("PixTransferCompleted.v1") ||
+    eventTypes.has("PixTransferCompleted.v2") ||
+    transfer?.sagaState === "completed" ||
+    transfer?.status === "completed";
+  const failed =
+    eventTypes.has("PixTransferFailed.v1") ||
+    eventTypes.has("PixTransferFailed.v2") ||
+    transfer?.sagaState === "failed" ||
+    transfer?.sagaState === "manual_intervention";
+  const terminal = completed || failed || refunded;
   const hasTransfer = transfer !== null;
 
   const nodes: Record<FlowNodeId, FlowNodeState> = {
@@ -51,38 +66,56 @@ export function buildFlowProgress(flow: FlowStep[], transfer: Transfer | null): 
         : idle(),
     "event-bus": requested
       ? {
-          status: debitSucceeded || debitFailed || creditSucceeded || completed || failed
+          status: debitSucceeded || debitFailed || creditSucceeded || creditFailed || terminal
             ? "success"
             : "active",
           evidence: "event"
         }
       : idle(),
-    wallet: debitFailed
+    "sender-bank": debitFailed
+      ? { status: "failure", evidence: "event" }
+      : refundFailed
+        ? { status: "failure", evidence: "event" }
+        : refunded
+        ? { status: "success", evidence: "event" }
+        : compensating
+          ? { status: "active", evidence: "event" }
+          : debitSucceeded
+            ? { status: "success", evidence: "event" }
+          : requested
+            ? { status: "active", evidence: "event" }
+            : idle(),
+    "recipient-bank": creditFailed
       ? { status: "failure", evidence: "event" }
       : creditSucceeded
         ? { status: "success", evidence: "event" }
         : debitSucceeded
           ? { status: "active", evidence: "event" }
-          : requested
-            ? { status: "active", evidence: "event" }
-            : idle(),
+          : idle(),
     "transaction-confirm": failed
       ? { status: "failure", evidence: "event" }
       : completed
         ? { status: "success", evidence: "event" }
-        : creditSucceeded
+        : creditSucceeded || creditFailed || compensating
           ? { status: "active", evidence: "event" }
           : idle(),
     realtime:
-      completed || failed
+      terminal
         ? { status: failed ? "failure" : "success", evidence: "event" }
         : flow.length > 0
           ? { status: "active", evidence: "event" }
           : idle(),
     "browser-end":
-      completed || failed
+      terminal
         ? { status: failed ? "failure" : "success", evidence: "event" }
         : idle(),
+    compensation: refundFailed
+      ? { status: "failure", evidence: "event" }
+      : refunded
+        ? { status: "success", evidence: "event" }
+        : compensating
+          ? { status: "active", evidence: "event" }
+          : idle(),
     presence: idle(),
     bots: idle()
   };
@@ -91,10 +124,10 @@ export function buildFlowProgress(flow: FlowStep[], transfer: Transfer | null): 
   if (hasTransfer) activeEdgeIndex = 1;
   if (requested) activeEdgeIndex = 2;
   if (debitSucceeded || debitFailed) activeEdgeIndex = 3;
-  if (creditSucceeded) activeEdgeIndex = 4;
-  if (completed || failed) activeEdgeIndex = 6;
+  if (creditSucceeded || creditFailed) activeEdgeIndex = 4;
+  if (terminal) activeEdgeIndex = 7;
 
-  return { nodes, activeEdgeIndex, terminal: completed || failed };
+  return { nodes, activeEdgeIndex, terminal };
 }
 
 export function getAvailableFlowStage(flow: FlowStep[], transfer: Transfer | null) {
@@ -105,17 +138,28 @@ export function getAvailableFlowStage(flow: FlowStep[], transfer: Transfer | nul
   const eventTypes = new Set(flow.map((step) => step.eventType));
   const requested = eventTypes.has("PixTransferRequested.v1");
   const debitRecorded =
-    eventTypes.has("PixDebitSucceeded.v1") || eventTypes.has("PixDebitFailed.v1");
-  const creditRecorded = eventTypes.has("PixCreditSucceeded.v1");
+    eventTypes.has("FundsDebited.v1") ||
+    eventTypes.has("FundsDebitRejected.v1") ||
+    eventTypes.has("PixDebitSucceeded.v1") ||
+    eventTypes.has("PixDebitFailed.v1");
+  const creditRecorded =
+    eventTypes.has("FundsCredited.v1") ||
+    eventTypes.has("FundsCreditRejected.v1") ||
+    eventTypes.has("PixCreditSucceeded.v1");
   const terminal =
     eventTypes.has("PixTransferCompleted.v1") ||
+    eventTypes.has("PixTransferCompleted.v2") ||
     eventTypes.has("PixTransferFailed.v1") ||
+    eventTypes.has("PixTransferFailed.v2") ||
+    eventTypes.has("PixTransferCompensated.v1") ||
     transfer.status === "completed" ||
-    transfer.status === "failed";
+    transfer.status === "failed" ||
+    ["completed", "compensated", "failed", "manual_intervention"].includes(transfer.sagaState ?? "");
 
   if (terminal) return flowPlaybackCompleteStage;
-  if (creditRecorded) return 5;
-  if (requested || debitRecorded) return 4;
+  if (creditRecorded) return 6;
+  if (debitRecorded) return 5;
+  if (requested) return 4;
   return 2;
 }
 
@@ -148,6 +192,10 @@ export function buildProceduralFlowProgress(
     }
   });
 
+  if (safeStage === flowPlaybackCompleteStage) {
+    nodes.compensation = finalProgress.nodes.compensation;
+  }
+
   return {
     nodes,
     activeEdgeIndex: safeStage === 0 ? -1 : Math.min(safeStage - 1, flowEdges.length - 1),
@@ -159,8 +207,9 @@ export const flowEdges = [
   ["browser-start", "gateway"],
   ["gateway", "transaction-start"],
   ["transaction-start", "event-bus"],
-  ["event-bus", "wallet"],
-  ["wallet", "transaction-confirm"],
+  ["event-bus", "sender-bank"],
+  ["sender-bank", "recipient-bank"],
+  ["recipient-bank", "transaction-confirm"],
   ["transaction-confirm", "realtime"],
   ["realtime", "browser-end"]
 ] as const;
@@ -170,9 +219,9 @@ export const primaryFlowNodes: FlowNodeId[] = [
   "gateway",
   "transaction-start",
   "event-bus",
-  "wallet",
+  "sender-bank",
+  "recipient-bank",
   "transaction-confirm",
   "realtime",
   "browser-end"
 ];
-

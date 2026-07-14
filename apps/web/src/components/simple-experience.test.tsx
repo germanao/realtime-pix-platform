@@ -41,6 +41,7 @@ describe("simple flow vocabulary", () => {
     expect(renderedLabels).not.toContain(".v1");
     expect(renderedLabels).not.toContain("api-gateway");
     expect(renderedLabels).toContain("Front Door");
-    expect(renderedLabels).toContain("Money Keeper");
+    expect(renderedLabels).toContain("Sender bank");
+    expect(renderedLabels).toContain("Recipient bank");
   });
 });

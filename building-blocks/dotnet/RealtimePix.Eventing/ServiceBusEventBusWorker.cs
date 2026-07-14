@@ -16,9 +16,9 @@ public sealed class ServiceBusEventBusWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var busOptions = options.Value;
-        if (string.IsNullOrWhiteSpace(busOptions.SubscriptionName))
+        if (string.IsNullOrWhiteSpace(busOptions.SubscriptionName) && string.IsNullOrWhiteSpace(busOptions.QueueName))
         {
-            throw new InvalidOperationException("Service Bus consumer requires EventBus:ServiceBus:SubscriptionName.");
+            throw new InvalidOperationException("Service Bus consumer requires a subscription or queue name.");
         }
 
         while (!stoppingToken.IsCancellationRequested)
@@ -35,9 +35,8 @@ public sealed class ServiceBusEventBusWorker(
             {
                 logger.LogError(
                     ex,
-                    "Service Bus worker for {Topic}/{Subscription} stopped before shutdown. Restarting in 5 seconds.",
-                    busOptions.TopicName,
-                    busOptions.SubscriptionName);
+                    "Service Bus worker for {Entity} stopped before shutdown. Restarting in 5 seconds.",
+                    ResolveEntityName(busOptions));
 
                 try
                 {
@@ -55,14 +54,14 @@ public sealed class ServiceBusEventBusWorker(
         ServiceBusEventBusOptions busOptions,
         CancellationToken stoppingToken)
     {
-        await using var processor = client.CreateProcessor(
-            busOptions.TopicName,
-            busOptions.SubscriptionName,
-            new ServiceBusProcessorOptions
-            {
-                AutoCompleteMessages = false,
-                MaxConcurrentCalls = Math.Max(1, busOptions.MaxConcurrentCalls)
-            });
+        var processorOptions = new ServiceBusProcessorOptions
+        {
+            AutoCompleteMessages = false,
+            MaxConcurrentCalls = Math.Max(1, busOptions.MaxConcurrentCalls)
+        };
+        await using var processor = string.IsNullOrWhiteSpace(busOptions.QueueName)
+            ? client.CreateProcessor(busOptions.TopicName, busOptions.SubscriptionName!, processorOptions)
+            : client.CreateProcessor(busOptions.QueueName, processorOptions);
 
         Task OnMessageAsync(ProcessMessageEventArgs message)
         {
@@ -73,7 +72,7 @@ public sealed class ServiceBusEventBusWorker(
         processor.ProcessErrorAsync += ProcessErrorAsync;
 
         await processor.StartProcessingAsync(stoppingToken);
-        logger.LogInformation("Service Bus worker started for {Topic}/{Subscription}.", busOptions.TopicName, busOptions.SubscriptionName);
+        logger.LogInformation("Service Bus worker started for {Entity}.", ResolveEntityName(busOptions));
 
         try
         {
@@ -158,5 +157,12 @@ public sealed class ServiceBusEventBusWorker(
     {
         logger.LogError(args.Exception, "Service Bus processing error from {ErrorSource} for {EntityPath}.", args.ErrorSource, args.EntityPath);
         return Task.CompletedTask;
+    }
+
+    private static string ResolveEntityName(ServiceBusEventBusOptions options)
+    {
+        return string.IsNullOrWhiteSpace(options.QueueName)
+            ? $"{options.TopicName}/{options.SubscriptionName}"
+            : options.QueueName;
     }
 }

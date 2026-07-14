@@ -2,36 +2,63 @@
   <Folder Name="/building-blocks/" />
   <Folder Name="/building-blocks/dotnet/">
     <Project Path="building-blocks/dotnet/RealtimePix.Eventing/RealtimePix.Eventing.csproj" />
+    <Project Path="building-blocks/dotnet/RealtimePix.Persistence/RealtimePix.Persistence.csproj" />
+    <Project Path="building-blocks/dotnet/RealtimePix.Web/RealtimePix.Web.csproj" />
   </Folder>
   <Folder Name="/contracts/" />
   <Folder Name="/contracts/dotnet/">
     <Project Path="contracts/dotnet/RealtimePix.Contracts/RealtimePix.Contracts.csproj" />
   </Folder>
   <Folder Name="/services/" />
+  <Folder Name="/services/bank-ledger-service/">
+    <Project Path="services/bank-ledger-service/BankLedger.Domain/BankLedger.Domain.csproj" />
+    <Project Path="services/bank-ledger-service/BankLedger.Application/BankLedger.Application.csproj" />
+    <Project Path="services/bank-ledger-service/BankLedger.Infrastructure/BankLedger.Infrastructure.csproj" />
+    <Project Path="services/bank-ledger-service/BankLedger.Api/BankLedger.Api.csproj" />
+  </Folder>
   <Folder Name="/services/api-gateway/">
-    <Project Path="services/api-gateway/ApiGateway.csproj" />
+    <Project Path="services/api-gateway/ApiGateway.Domain/ApiGateway.Domain.csproj" />
+    <Project Path="services/api-gateway/ApiGateway.Application/ApiGateway.Application.csproj" />
+    <Project Path="services/api-gateway/ApiGateway.Infrastructure/ApiGateway.Infrastructure.csproj" />
+    <Project Path="services/api-gateway/ApiGateway.Api/ApiGateway.Api.csproj" />
   </Folder>
   <Folder Name="/services/bot-service/">
-    <Project Path="services/bot-service/BotService.csproj" />
+    <Project Path="services/bot-service/Bot.Domain/Bot.Domain.csproj" />
+    <Project Path="services/bot-service/Bot.Application/Bot.Application.csproj" />
+    <Project Path="services/bot-service/Bot.Infrastructure/Bot.Infrastructure.csproj" />
+    <Project Path="services/bot-service/Bot.Worker/Bot.Worker.csproj" />
   </Folder>
   <Folder Name="/services/identity-presence-service/">
-    <Project Path="services/identity-presence-service/IdentityPresenceService.csproj" />
+    <Project Path="services/identity-presence-service/IdentityPresence.Domain/IdentityPresence.Domain.csproj" />
+    <Project Path="services/identity-presence-service/IdentityPresence.Application/IdentityPresence.Application.csproj" />
+    <Project Path="services/identity-presence-service/IdentityPresence.Infrastructure/IdentityPresence.Infrastructure.csproj" />
+    <Project Path="services/identity-presence-service/IdentityPresence.Api/IdentityPresence.Api.csproj" />
   </Folder>
   <Folder Name="/services/realtime-events-service/">
-    <Project Path="services/realtime-events-service/RealtimeEventsService.csproj" />
+    <Project Path="services/realtime-events-service/RealtimeEvents.Domain/RealtimeEvents.Domain.csproj" />
+    <Project Path="services/realtime-events-service/RealtimeEvents.Application/RealtimeEvents.Application.csproj" />
+    <Project Path="services/realtime-events-service/RealtimeEvents.Infrastructure/RealtimeEvents.Infrastructure.csproj" />
+    <Project Path="services/realtime-events-service/RealtimeEvents.Api/RealtimeEvents.Api.csproj" />
   </Folder>
   <Folder Name="/services/transaction-service/">
-    <Project Path="services/transaction-service/TransactionService.csproj" />
+    <Project Path="services/transaction-service/Transaction.Domain/Transaction.Domain.csproj" />
+    <Project Path="services/transaction-service/Transaction.Application/Transaction.Application.csproj" />
+    <Project Path="services/transaction-service/Transaction.Infrastructure/Transaction.Infrastructure.csproj" />
+    <Project Path="services/transaction-service/Transaction.Api/Transaction.Api.csproj" />
   </Folder>
   <Folder Name="/services/wallet-ledger-service/">
     <Project Path="services/wallet-ledger-service/WalletLedgerService.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/BotService.Tests/BotService.Tests.csproj" />
+    <Project Path="tests/BankLedgerService.Tests/BankLedgerService.Tests.csproj" />
     <Project Path="tests/Eventing.Tests/Eventing.Tests.csproj" />
     <Project Path="tests/IdentityPresenceService.Tests/IdentityPresenceService.Tests.csproj" />
     <Project Path="tests/RealtimePix.ArchitectureChecks/RealtimePix.ArchitectureChecks.csproj" />
+    <Project Path="tests/RealtimePix.IntegrationTests/RealtimePix.IntegrationTests.csproj" />
     <Project Path="tests/RealtimeEventsService.Tests/RealtimeEventsService.Tests.csproj" />
     <Project Path="tests/TransactionService.Tests/TransactionService.Tests.csproj" />
     <Project Path="tests/WalletLedgerService.Tests/WalletLedgerService.Tests.csproj" />
+    <Project Path="tests/WebHosting.Tests/WebHosting.Tests.csproj" />
   </Folder>
 </Solution>

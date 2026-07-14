@@ -16,64 +16,92 @@ jobs:
     name: Static Terraform validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v6
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.11.4
-      - run: terraform fmt -check -recursive infra/terraform
-      - working-directory: infra/terraform/bootstrap
+      - uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93
+        with:
+          tflint_version: v0.59.1
+      - name: Format
+        run: terraform fmt -check -recursive infra/terraform
+      - name: Validate all root stacks
+        shell: bash
         run: |
-          terraform init -backend=false
-          terraform validate
-      - working-directory: infra/terraform/foundation
+          for stack in bootstrap foundation runtime production-reference; do
+            terraform -chdir="infra/terraform/$stack" init -backend=false
+            terraform -chdir="infra/terraform/$stack" validate
+          done
+      - name: TFLint
+        shell: bash
         run: |
-          terraform init -backend=false
-          terraform validate
-      - working-directory: infra/terraform/runtime
+          tflint --init
+          tflint --recursive --chdir=infra/terraform
+      - name: Terraform native tests
+        shell: bash
         run: |
-          terraform init -backend=false
-          terraform validate
+          terraform -chdir=infra/terraform/foundation test
+          terraform -chdir=infra/terraform/production-reference test
+      - name: Provider lock verification
+        shell: bash
+        run: |
+          for stack in bootstrap foundation runtime production-reference; do
+            terraform -chdir="infra/terraform/$stack" providers lock \
+              -platform=linux_amd64 \
+              -platform=windows_amd64
+          done
+          git diff --exit-code -- 'infra/terraform/**/.terraform.lock.hcl'
+      - name: Trivy Terraform configuration scan
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8
+        with:
+          scan-type: config
+          scan-ref: infra/terraform
+          severity: CRITICAL
+          exit-code: "1"
 
   trusted-plan:
-    name: Trusted Azure plan
-    if: github.event_name == 'workflow_dispatch'
+    name: Trusted read-only Azure plan
+    if: >-
+      vars.AZURE_PLAN_CLIENT_ID != '' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-latest
-    environment: poc
+    env:
+      TF_INPUT: "0"
+      TF_VAR_tfstate_resource_group_name: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+      TF_VAR_tfstate_storage_account_name: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+      TF_VAR_tfstate_container_name: ${{ vars.TFSTATE_CONTAINER }}
+      TF_VAR_publisher_email: ${{ vars.PUBLISHER_EMAIL || 'showcase@example.invalid' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/login@v2
+      - uses: actions/checkout@v6
+      - uses: azure/login@v3
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          client-id: ${{ vars.AZURE_PLAN_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.11.4
       - name: Foundation plan
         working-directory: infra/terraform/foundation
+        shell: bash
         run: |
           terraform init \
             -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -backend-config="key=foundation-poc.tfstate" \
+            -backend-config="key=poc/foundation.tfstate" \
             -backend-config="use_azuread_auth=true"
-          terraform plan \
-            -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
-            -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
-            -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -var="publisher_email=${{ vars.PUBLISHER_EMAIL }}"
+          terraform plan -lock=false
       - name: Runtime plan
         working-directory: infra/terraform/runtime
+        shell: bash
         run: |
           terraform init \
             -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -backend-config="key=runtime-poc.tfstate" \
+            -backend-config="key=poc/runtime.tfstate" \
             -backend-config="use_azuread_auth=true"
-          terraform plan \
-            -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
-            -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
-            -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -var="image_tag=${{ github.sha }}"
+          terraform plan -lock=false -var="image_tag=${{ github.event.pull_request.head.sha || github.sha }}"

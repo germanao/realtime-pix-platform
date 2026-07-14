@@ -1,5 +1,7 @@
 # Azure Container Apps Portal Proof of Concept
 
+> Historical learning guide for manual provisioning. Resource names and service counts do not describe the current Terraform-managed Saga platform.
+
 This guide creates the Real-Time PIX backend manually through the Azure Portal.
 It is designed for learning Azure Container Apps and validating the hosting
 model before introducing Terraform and CI/CD.
@@ -149,56 +151,22 @@ Do not publish images from a failing build.
 Every image must be built with the monorepo root as its Docker build context
 because services reference projects under `contracts` and `building-blocks`.
 
-The following is the pattern for
-`services/api-gateway/Dockerfile`:
-
-```dockerfile
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-WORKDIR /src
-
-COPY Directory.Build.props ./
-COPY building-blocks/dotnet/RealtimePix.Eventing/RealtimePix.Eventing.csproj building-blocks/dotnet/RealtimePix.Eventing/
-COPY services/api-gateway/ApiGateway.csproj services/api-gateway/
-
-RUN dotnet restore services/api-gateway/ApiGateway.csproj
-
-COPY . .
-
-RUN dotnet publish services/api-gateway/ApiGateway.csproj \
-    --configuration Release \
-    --output /app/publish \
-    /p:UseAppHost=false
-
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
-WORKDIR /app
-
-ENV ASPNETCORE_URLS=http://+:8080
-ENV DOTNET_ENVIRONMENT=Production
-
-EXPOSE 8080
-
-COPY --from=build /app/publish .
-
-ENTRYPOINT ["dotnet", "ApiGateway.dll"]
-```
-
-For the other five services, include both shared project files before restore:
-
-```dockerfile
-COPY contracts/dotnet/RealtimePix.Contracts/RealtimePix.Contracts.csproj contracts/dotnet/RealtimePix.Contracts/
-COPY building-blocks/dotnet/RealtimePix.Eventing/RealtimePix.Eventing.csproj building-blocks/dotnet/RealtimePix.Eventing/
-```
+The checked-in Dockerfiles are the executable source of truth. They copy only
+project manifests before restore to preserve Docker layer caching, then copy
+the required service and building-block sources before publishing. Do not
+recreate an older single-project Dockerfile from this historical guide.
 
 Use this service mapping:
 
 | Dockerfile | Project passed to restore/publish | Runtime DLL |
 | --- | --- | --- |
-| `services/api-gateway/Dockerfile` | `services/api-gateway/ApiGateway.csproj` | `ApiGateway.dll` |
-| `services/identity-presence-service/Dockerfile` | `services/identity-presence-service/IdentityPresenceService.csproj` | `IdentityPresenceService.dll` |
-| `services/wallet-ledger-service/Dockerfile` | `services/wallet-ledger-service/WalletLedgerService.csproj` | `WalletLedgerService.dll` |
-| `services/transaction-service/Dockerfile` | `services/transaction-service/TransactionService.csproj` | `TransactionService.dll` |
-| `services/realtime-events-service/Dockerfile` | `services/realtime-events-service/RealtimeEventsService.csproj` | `RealtimeEventsService.dll` |
-| `services/bot-service/Dockerfile` | `services/bot-service/BotService.csproj` | `BotService.dll` |
+| `services/api-gateway/Dockerfile` | `services/api-gateway/ApiGateway.Api/ApiGateway.Api.csproj` | `ApiGateway.Api.dll` |
+| `services/identity-presence-service/Dockerfile` | `services/identity-presence-service/IdentityPresence.Api/IdentityPresence.Api.csproj` | `IdentityPresence.Api.dll` |
+| `services/bank-ledger-service/Dockerfile` | `services/bank-ledger-service/BankLedger.Api/BankLedger.Api.csproj` | `BankLedger.Api.dll` |
+| `services/transaction-service/Dockerfile` | `services/transaction-service/Transaction.Api/Transaction.Api.csproj` | `Transaction.Api.dll` |
+| `services/realtime-events-service/Dockerfile` | `services/realtime-events-service/RealtimeEvents.Api/RealtimeEvents.Api.csproj` | `RealtimeEvents.Api.dll` |
+| `services/bot-service/Dockerfile` | `services/bot-service/Bot.Worker/Bot.Worker.csproj` | `Bot.Worker.dll` |
+| `services/wallet-ledger-service/Dockerfile` | `services/wallet-ledger-service/WalletLedgerService.csproj` | `WalletLedgerService.dll` (one-release legacy image) |
 
 Add a repository-root `.dockerignore`:
 

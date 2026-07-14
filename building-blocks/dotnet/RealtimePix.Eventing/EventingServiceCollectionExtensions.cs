@@ -34,6 +34,11 @@ public static class EventingServiceCollectionExtensions
             }
         });
         services.AddSingleton<IIntegrationEventPublisher, FileIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationMessagePublisher>(serviceProvider =>
+            (FileIntegrationEventPublisher)serviceProvider.GetRequiredService<IIntegrationEventPublisher>());
+        services.AddSingleton<IIntegrationEnvelopeTransport>(serviceProvider =>
+            (FileIntegrationEventPublisher)serviceProvider.GetRequiredService<IIntegrationEventPublisher>());
+        services.AddSingleton<IEventBusReadinessProbe, FileEventBusReadinessProbe>();
         services.AddHostedService<FileEventBusWorker>();
         return services;
     }
@@ -59,8 +64,14 @@ public static class EventingServiceCollectionExtensions
         services.AddSingleton<ServiceBusIntegrationEventPublisher>();
         services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
             serviceProvider.GetRequiredService<ServiceBusIntegrationEventPublisher>());
+        services.AddSingleton<IIntegrationMessagePublisher>(serviceProvider =>
+            serviceProvider.GetRequiredService<ServiceBusIntegrationEventPublisher>());
+        services.AddSingleton<IIntegrationEnvelopeTransport>(serviceProvider =>
+            serviceProvider.GetRequiredService<ServiceBusIntegrationEventPublisher>());
+        services.AddSingleton<IEventBusReadinessProbe, ServiceBusReadinessProbe>();
 
-        if (!string.IsNullOrWhiteSpace(ResolveSubscriptionName(consumerName)))
+        if (!string.IsNullOrWhiteSpace(ResolveSubscriptionName(consumerName)) ||
+            !string.IsNullOrWhiteSpace(configuration["EventBus:ServiceBus:QueueName"]))
         {
             services.AddHostedService<ServiceBusEventBusWorker>();
         }

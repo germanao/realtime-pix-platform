@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\RealtimeEvents.Domain\RealtimeEvents.Domain.csproj" />
+    <ProjectReference Include="..\..\..\contracts\dotnet\RealtimePix.Contracts\RealtimePix.Contracts.csproj" />
+  </ItemGroup>
+</Project>

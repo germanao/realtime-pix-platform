@@ -11,4 +11,3 @@ public static class KnownBotUsers
         new("bot-silver-signal", "Silver Signal [BOT]")
     ];
 }
-

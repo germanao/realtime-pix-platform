@@ -10,6 +10,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     exclude: ["e2e/**", "node_modules/**", ".next/**"],
-    setupFiles: ["./src/test/setup.ts"]
+    setupFiles: ["./src/test/setup.ts"],
+    fileParallelism: false,
+    maxWorkers: 1
   }
 });
