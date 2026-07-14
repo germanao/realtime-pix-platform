@@ -42,7 +42,7 @@ jobs:
       TF_VAR_tfstate_container_name: ${{ vars.TFSTATE_CONTAINER }}
       VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.11.4
