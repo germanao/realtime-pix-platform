@@ -97,6 +97,17 @@ public sealed class TerraformPolicyTests
         Assert.Contains("TrueFilter expressions are forbidden", module, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GitHub_apply_workflow_cannot_manage_its_own_bootstrap_identity()
+    {
+        var workflow = Read(".github", "workflows", "infrastructure-apply.yml");
+
+        Assert.DoesNotContain("options: [bootstrap", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Plan or apply bootstrap", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("working-directory: infra/terraform/bootstrap", workflow, StringComparison.Ordinal);
+        Assert.Contains("options: [foundation, runtime, all]", workflow, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("bootstrap")]
     [InlineData("foundation")]

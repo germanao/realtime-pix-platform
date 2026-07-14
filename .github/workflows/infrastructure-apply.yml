@@ -17,7 +17,7 @@ on:
         required: true
         default: foundation
         type: choice
-        options: [bootstrap, foundation, runtime, all]
+        options: [foundation, runtime, all]
       image_tag:
         description: "Existing ACR image tag (required for runtime/all)"
         required: false
@@ -67,44 +67,6 @@ jobs:
             echo "image_tag is required when applying runtime or all." >&2
             exit 1
           fi
-
-      - name: Plan or apply bootstrap
-        if: inputs.stack == 'bootstrap'
-        working-directory: infra/terraform/bootstrap
-        shell: bash
-        run: |
-          terraform init \
-            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
-            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
-            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -backend-config="key=bootstrap.tfstate" \
-            -backend-config="use_azuread_auth=true"
-
-          if [[ "${{ inputs.operation }}" == "plan" ]]; then
-            terraform plan
-          else
-            terraform apply -auto-approve
-          fi
-
-      - name: Synchronize bootstrap GitHub variables
-        if: inputs.stack == 'bootstrap' && inputs.operation == 'apply'
-        working-directory: infra/terraform/bootstrap
-        shell: bash
-        run: |
-          apply_client_id="$(terraform output -raw github_apply_client_id)"
-          plan_client_id="$(terraform output -raw github_plan_client_id)"
-          image_client_id="$(terraform output -raw github_image_push_client_id)"
-
-          gh variable set AZURE_APPLY_CLIENT_ID --repo "$GITHUB_REPOSITORY" --env poc --body "$apply_client_id"
-          gh variable set AZURE_IMAGE_CLIENT_ID --repo "$GITHUB_REPOSITORY" --env poc --body "$image_client_id"
-
-          gh variable set AZURE_PLAN_CLIENT_ID --repo "$GITHUB_REPOSITORY" --body "$plan_client_id"
-          gh variable set AZURE_TENANT_ID --repo "$GITHUB_REPOSITORY" --body "${{ vars.AZURE_TENANT_ID }}"
-          gh variable set AZURE_SUBSCRIPTION_ID --repo "$GITHUB_REPOSITORY" --body "${{ vars.AZURE_SUBSCRIPTION_ID }}"
-          gh variable set TFSTATE_RESOURCE_GROUP --repo "$GITHUB_REPOSITORY" --body "${{ vars.TFSTATE_RESOURCE_GROUP }}"
-          gh variable set TFSTATE_STORAGE_ACCOUNT --repo "$GITHUB_REPOSITORY" --body "${{ vars.TFSTATE_STORAGE_ACCOUNT }}"
-          gh variable set TFSTATE_CONTAINER --repo "$GITHUB_REPOSITORY" --body "${{ vars.TFSTATE_CONTAINER }}"
-          gh variable set PUBLISHER_EMAIL --repo "$GITHUB_REPOSITORY" --body "${{ vars.PUBLISHER_EMAIL }}"
 
       - name: Plan or apply foundation
         if: inputs.stack == 'foundation' || inputs.stack == 'all'

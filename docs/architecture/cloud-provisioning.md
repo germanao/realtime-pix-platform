@@ -33,11 +33,13 @@ Dynamic Vercel preview hosts require one explicit POC compromise. Azure SignalR 
 
 Bootstrap is protected from routine destroy. Runtime can be replaced without recreating data services. Foundation changes require explicit environment approval.
 
+Bootstrap is also excluded from GitHub apply workflows. A subscription owner runs it from an authenticated local shell, reviews the plan, applies it, and then publishes only its non-secret outputs as GitHub variables. This avoids giving an automation identity permission to create or expand its own trust and RBAC assignments.
+
 ## GitHub Identity Boundaries
 
 - Plan identity: read-only Azure access for trusted pull requests.
 - Image identity: ACR push only.
-- Apply identity: scoped resource management and data-plane bootstrap permissions.
+- Apply identity: scoped management of the application resource group plus state data-plane access; it has no bootstrap, state-resource-group, or subscription-budget permissions.
 
 Federated credentials bind exact GitHub repository/environment subjects. Workflows store only client, tenant, subscription, and backend identifiers; Azure client secrets are not used.
 
