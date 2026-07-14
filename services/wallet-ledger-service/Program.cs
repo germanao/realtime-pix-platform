@@ -1,7 +1,7 @@
-using RealtimePix.Contracts;
-using RealtimePix.Eventing;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.EntityFrameworkCore;
+using RealtimePix.Contracts;
+using RealtimePix.Eventing;
 
 const string ServiceName = "wallet-ledger-service";
 

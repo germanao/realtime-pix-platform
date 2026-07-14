@@ -1,6 +1,6 @@
-using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -8,7 +8,10 @@ namespace RealtimePix.Eventing;
 
 public sealed class FileIntegrationEventPublisher(
     IOptions<FileEventBusOptions> options,
-    ILogger<FileIntegrationEventPublisher> logger) : IIntegrationEventPublisher
+    ILogger<FileIntegrationEventPublisher> logger) :
+    IIntegrationEventPublisher,
+    IIntegrationMessagePublisher,
+    IIntegrationEnvelopeTransport
 {
     private const int MaxAppendAttempts = 5;
 
@@ -21,27 +24,60 @@ public sealed class FileIntegrationEventPublisher(
         string? causationId = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(producer);
-
-        var busOptions = options.Value;
-        System.IO.Directory.CreateDirectory(busOptions.Directory);
-
-        var envelope = new EventEnvelope(
-            Guid.NewGuid(),
+        var envelope = IntegrationMessageFactory.Create(
             eventType,
             version,
-            DateTimeOffset.UtcNow,
-            correlationId ?? Guid.NewGuid().ToString("N"),
-            causationId,
             producer,
-            JsonSerializer.SerializeToElement(payload, JsonDefaults.Options));
+            payload,
+            IntegrationMessageKind.Event,
+            IntegrationMessageDestination.Topic("platform-events"),
+            subject: null,
+            correlationId,
+            causationId);
+
+        await PublishEnvelopeAsync(envelope, cancellationToken);
+    }
+
+    public async Task PublishCommandAsync<TPayload>(
+        string queueName,
+        string messageType,
+        int version,
+        string producer,
+        TPayload payload,
+        string? subject = null,
+        string? correlationId = null,
+        string? causationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var envelope = IntegrationMessageFactory.Create(
+            messageType,
+            version,
+            producer,
+            payload,
+            IntegrationMessageKind.Command,
+            IntegrationMessageDestination.Queue(queueName),
+            subject,
+            correlationId,
+            causationId);
+
+        await PublishEnvelopeAsync(envelope, cancellationToken);
+    }
+
+    public async Task PublishEnvelopeAsync(EventEnvelope envelope, CancellationToken cancellationToken = default)
+    {
+        var busOptions = options.Value;
+        System.IO.Directory.CreateDirectory(busOptions.Directory);
 
         var json = JsonSerializer.Serialize(envelope, JsonDefaults.Options);
         var eventsPath = Path.Combine(busOptions.Directory, "events.jsonl");
         await AppendLineAsync(eventsPath, json, cancellationToken);
 
-        logger.LogInformation("Published integration event {EventType} {EventId}", eventType, envelope.EventId);
+        logger.LogInformation(
+            "Published local {MessageKind} {EventType} {EventId} to {Destination}",
+            envelope.MessageKind,
+            envelope.EventType,
+            envelope.EventId,
+            envelope.Destination);
     }
 
     private static async Task AppendLineAsync(string eventsPath, string json, CancellationToken cancellationToken)

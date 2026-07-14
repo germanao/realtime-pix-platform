@@ -1,5 +1,7 @@
 # GitHub, Terraform, and Azure Full Reset Runbook
 
+> Historical migration record. The reset has been completed; current state keys, Saga topology, and workflows are documented in [the deployment index](README.md).
+
 This runbook replaces the manual Azure POC and Azure DevOps flow with GitHub
 Actions plus Terraform. The destructive steps intentionally discard fictional
 demo data. Do not run them against resource groups containing unrelated assets.
@@ -15,9 +17,9 @@ gh auth login
 terraform version
 ```
 
-Terraform was not installed on this workstation during implementation, so local
-Terraform validation could not be executed here. GitHub Actions will run
-`terraform fmt -check` and `terraform validate`.
+The repository pins Terraform `1.11.4`. Run `terraform fmt -check`,
+`terraform validate`, and the native module tests locally before relying on the
+same gates in GitHub Actions.
 
 ## 2. Inventory the Manual Azure POC
 
@@ -152,21 +154,19 @@ terraform apply \
   -var="publisher_email=you@example.com"
 ```
 
-## 7. PostgreSQL Roles and Secrets
+## 7. PostgreSQL Workload Principals
 
-Terraform creates the PostgreSQL server and databases. PostgreSQL application
-roles are configured by script because they run inside PostgreSQL itself.
+This password-based migration step has been retired. The current deployment
+workflow reads the five workload identities from runtime Terraform, opens a
+temporary runner-IP firewall rule, and runs
+`scripts/cloud/postgres-bootstrap-entra.sh`. That script creates Microsoft
+Entra service principals for Identity, Bank A, Bank B, Transaction, and
+Realtime, then grants each principal ownership of only its service database.
+No database connection string or password is written to Key Vault.
 
-```bash
-export PGHOST="$(terraform output -raw postgres_fqdn)"
-export KEYVAULT_NAME="$(terraform output -raw key_vault_name)"
-export PGADMIN_USER="$(terraform output -raw postgres_admin_login)"
-scripts/cloud/postgres-bootstrap.sh
-```
-
-This creates `identity_app`, `wallet_app`, `transaction_app`, and
-`realtime_app`, then updates Key Vault secrets `identity-db`, `wallet-db`,
-`transaction-db`, and `realtime-db`.
+Use the current commands and required GitHub variables in the
+[deployment index](README.md); do not recreate the removed application roles
+from this historical reset sequence.
 
 ## 8. Service Bus Default Rule Cleanup
 

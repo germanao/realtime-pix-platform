@@ -1,5 +1,7 @@
 # Azure Scripts for Runbook Steps 16.3 to 26
 
+> Historical Cloud Shell commands for the retired manual topology. Do not run these against the current Terraform-managed POC.
+
 These scripts are intended for Azure Cloud Shell Bash unless a section says
 otherwise. Paste one block at a time.
 

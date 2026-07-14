@@ -1,51 +1,66 @@
-# Cloud Provisioning Defaults
+# Azure Provisioning Model
 
-Detailed execution guides:
+The backend is Azure-only; the Next.js frontend uses Vercel. Terraform is the source of truth after the initial bootstrap.
 
-- [Recommended cloud services provisioning](../deployment/recommended-cloud-services-provisioning.md)
-- [Cloud integration change specification](../deployment/cloud-integration-change-specification.md)
-- [Azure Portal proof of concept](../deployment/azure-container-apps-portal-poc.md)
-- [Terraform and CI/CD](../deployment/azure-container-apps-terraform-cicd.md)
+## POC Profile
 
-Provision the first public demo with free-tier-oriented services:
+| Capability | Azure resource |
+| --- | --- |
+| Containers | Container Apps Consumption |
+| HTTP edge | API Management Consumption |
+| Images | Container Registry Basic |
+| Messaging | Service Bus Standard |
+| Browser realtime | SignalR Free |
+| Relational state | PostgreSQL Flexible Server B1ms |
+| Configuration | App Configuration Free |
+| Secrets/bootstrap | Key Vault Standard |
+| Telemetry | Log Analytics and Application Insights |
+| Future push | Notification Hubs Free |
 
-- Vercel Hobby for `apps/web`.
-- Azure Container Apps Consumption for each .NET service.
-- Azure Event Grid for integration event delivery.
-- Azure SignalR Service for the existing ASP.NET Core SignalR hubs.
-- Azure Notification Hubs Free for the future notification adapter.
-- Neon PostgreSQL Free with four isolated projects:
-  - `identity_presence_db`
-  - `wallet_ledger_db`
-  - `transaction_db`
-  - `realtime_projection_db`
+Five databases are active: `identity_presence_db`, `bank_a_ledger_db`, `bank_b_ledger_db`, `transaction_db`, and `realtime_projection_db`. `wallet_ledger_db` is a trafficless one-release rollback artifact, not an active ownership boundary.
 
-The realtime database is recommended so the public timeline and transfer flow
-survive service restarts. It can be omitted only when that projection is
-explicitly disposable.
+All seven active Container Apps use a dedicated user-assigned managed identity and `min_replicas = 1`. Bank A and Bank B have separate databases, queues, and identities even though they use one image. PostgreSQL authentication and Azure SDK access use Microsoft Entra tokens; no application database password or Service Bus shared key is stored in Container Apps.
 
-## Container Apps
+Dynamic Vercel preview hosts require one explicit POC compromise. Azure SignalR accepts exact origins or the global `*`, but not partial host wildcards, so its managed transport uses `*` in the POC. The Identity/Presence and Realtime negotiate endpoints still allow only localhost, the production Vercel URL, and generated preview hosts containing both the configured Vercel project name (`realtime-pix`) and owning scope (`germanaos-projects`); APIM applies the same constraint. Forks must override both values. The non-deployed production profile uses exact SignalR origins. See the [Azure SignalR CORS CLI contract](https://learn.microsoft.com/en-us/cli/azure/signalr/cors?view=azure-cli-latest).
 
-Each service should be deployed independently:
+## State Separation
 
-- `api-gateway`
-- `identity-presence-service`
-- `wallet-ledger-service`
-- `transaction-service`
-- `realtime-events-service`
-- `bot-service`
+| Stack | State key | Lifecycle |
+| --- | --- | --- |
+| Bootstrap | `bootstrap.tfstate` | State storage, resource group, budget, GitHub OIDC identities |
+| Foundation | `poc/foundation.tfstate` | Shared Azure PaaS resources and message topology |
+| Runtime | `poc/runtime.tfstate` | Identities, Container Apps, APIM API/policies, alerts |
 
-Use scale-to-zero where possible. Keep only the realtime or bot workloads warm if the demo needs immediate responsiveness.
+Bootstrap is protected from routine destroy. Runtime can be replaced without recreating data services. Foundation changes require explicit environment approval.
 
-## Secrets
+## GitHub Identity Boundaries
 
-Keep these as environment variables or managed secrets:
+- Plan identity: read-only Azure access for trusted pull requests.
+- Image identity: ACR push only.
+- Apply identity: scoped resource management and data-plane bootstrap permissions.
 
-- `ConnectionStrings__IdentityPresence`
-- `ConnectionStrings__WalletLedger`
-- `ConnectionStrings__Transaction`
-- `ConnectionStrings__RealtimeProjection`
-- `EventGrid__TopicEndpoint`
-- `EventGrid__AccessKey`
-- `Azure__SignalR__ConnectionString`
-- `NotificationHubs__ConnectionString`
+Federated credentials bind exact GitHub repository/environment subjects. Workflows store only client, tenant, subscription, and backend identifiers; Azure client secrets are not used.
+
+## Production Reference
+
+`infra/terraform/production-reference` is plan-valid documentation, not an automatic deployment target. It uses:
+
+- Separate private PostgreSQL servers per state owner.
+- Service Bus Premium and ACR Premium private endpoints.
+- A VNet-integrated Container Apps workload-profile environment.
+- Seven dedicated workload identities and seven Container Apps on a bounded D4 profile.
+- APIM Standard v2 outbound VNet integration.
+- APIM routes to the internal Gateway and exposes only Identity/Realtime SignalR negotiation; SignalR Standard keeps public browser client connections while server/REST paths use its private endpoint.
+- Private DNS, purge-protected Key Vault, HA, and longer retention.
+
+It is a reviewed starting point, not a universal production template. Real use still requires organization-specific SLOs, threat modeling, egress, disaster recovery, data residency, and capacity decisions. It also requires a private-network migration runner to create the five database principals and apply EF migration bundles before enabling traffic.
+
+## Apply Paths
+
+- Application release: `.github/workflows/deploy-poc.yml`
+- Explicit infrastructure apply: `.github/workflows/infrastructure-apply.yml`
+- Pull-request plan/security checks: `.github/workflows/terraform-plan.yml`
+- Scheduled drift detection: `.github/workflows/terraform-drift.yml`
+- Manual destroy: `.github/workflows/destroy-poc.yml`
+
+See [the deployment index](../deployment/README.md) and the README in each Terraform root/module.

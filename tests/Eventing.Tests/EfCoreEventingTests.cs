@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using RealtimePix.Contracts;
@@ -14,6 +15,7 @@ public sealed class EfCoreEventingTests
         await using var dbContext = CreateDbContext();
         var publisher = new EfCoreOutboxIntegrationEventPublisher<TestEventingDbContext>(
             dbContext,
+            new ConfigurationBuilder().AddInMemoryCollection().Build(),
             NullLogger<EfCoreOutboxIntegrationEventPublisher<TestEventingDbContext>>.Instance);
 
         await publisher.PublishAsync(

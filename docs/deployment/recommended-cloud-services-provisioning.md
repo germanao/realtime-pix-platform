@@ -1,5 +1,7 @@
 # Azure Backend and Vercel Frontend Provisioning Runbook
 
+> Historical manual-provisioning guide for the original six-service topology. Do not use it to modify the current Terraform-managed environment; start with [the deployment index](README.md).
+
 This runbook provisions the Real-Time PIX Event Platform with Azure and Azure
 DevOps for all backend, data, messaging, registry, security, observability, and
 CI/CD services. The Next.js frontend is deployed to Vercel Hobby.

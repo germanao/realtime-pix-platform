@@ -1,5 +1,7 @@
 # Azure Container Apps With Terraform and CI/CD
 
+> Historical CI/CD design. The executable source of truth is now `.github/workflows`, `infra/terraform`, and [the deployment index](README.md).
+
 This guide replaces the manual Portal deployment with repeatable
 infrastructure and automated application delivery.
 

@@ -1,48 +1,63 @@
 name: realtime-pix-platform
 
+x-postgres: &postgres
+  image: postgres:16-alpine
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+    interval: 3s
+    timeout: 3s
+    retries: 20
+
 services:
   postgres-identity:
-    image: postgres:16-alpine
+    <<: *postgres
     environment:
       POSTGRES_USER: identity_app
       POSTGRES_PASSWORD: identity_dev_password
       POSTGRES_DB: identity_presence_db
-    ports:
-      - "5433:5432"
-    volumes:
-      - identity-postgres:/var/lib/postgresql/data
+    ports: ["5433:5432"]
+    volumes: ["identity-postgres:/var/lib/postgresql/data"]
 
-  postgres-wallet:
-    image: postgres:16-alpine
+  postgres-bank-a:
+    <<: *postgres
     environment:
-      POSTGRES_USER: wallet_app
-      POSTGRES_PASSWORD: wallet_dev_password
-      POSTGRES_DB: wallet_ledger_db
-    ports:
-      - "5434:5432"
-    volumes:
-      - wallet-postgres:/var/lib/postgresql/data
+      POSTGRES_USER: bank_a_app
+      POSTGRES_PASSWORD: bank_a_dev_password
+      POSTGRES_DB: bank_a_ledger_db
+    ports: ["5434:5432"]
+    volumes: ["bank-a-postgres:/var/lib/postgresql/data"]
+
+  postgres-bank-b:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: bank_b_app
+      POSTGRES_PASSWORD: bank_b_dev_password
+      POSTGRES_DB: bank_b_ledger_db
+    ports: ["5435:5432"]
+    volumes: ["bank-b-postgres:/var/lib/postgresql/data"]
 
   postgres-transaction:
-    image: postgres:16-alpine
+    <<: *postgres
     environment:
       POSTGRES_USER: transaction_app
       POSTGRES_PASSWORD: transaction_dev_password
       POSTGRES_DB: transaction_db
-    ports:
-      - "5435:5432"
-    volumes:
-      - transaction-postgres:/var/lib/postgresql/data
+    ports: ["5436:5432"]
+    volumes: ["transaction-postgres:/var/lib/postgresql/data"]
 
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    profiles: ["broker"]
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+  postgres-realtime:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: realtime_app
+      POSTGRES_PASSWORD: realtime_dev_password
+      POSTGRES_DB: realtime_projection_db
+    ports: ["5437:5432"]
+    volumes: ["realtime-postgres:/var/lib/postgresql/data"]
 
 volumes:
   identity-postgres:
-  wallet-postgres:
+  bank-a-postgres:
+  bank-b-postgres:
   transaction-postgres:
-
+  realtime-postgres:

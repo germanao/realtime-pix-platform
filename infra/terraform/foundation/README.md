@@ -1,40 +1,29 @@
 # Foundation Terraform
 
-This stack creates the shared Azure services used by the POC runtime:
+This stack creates long-lived POC services: ACR Basic, one Entra-enabled PostgreSQL server, Service Bus Standard, SignalR Free, App Configuration, Key Vault, observability, Container Apps environment, APIM Consumption, and Notification Hubs Free.
 
-- ACR Basic
-- PostgreSQL Flexible Server with four service-owned databases
-- Service Bus Standard topic/subscriptions
-- Azure SignalR Free
-- Key Vault
-- App Configuration Free
-- Log Analytics and Application Insights
-- Container Apps environment
-- APIM Consumption
-- Notification Hubs Free
+Five databases are active (`identity_presence_db`, both bank ledger databases, `transaction_db`, and `realtime_projection_db`). `wallet_ledger_db` and its `1 = 0` subscription are retained trafficless for one rollback release.
 
-Initialize with the backend created by bootstrap:
+Initialize with the bootstrap backend:
 
 ```bash
 terraform init \
   -backend-config="resource_group_name=$TFSTATE_RESOURCE_GROUP" \
   -backend-config="storage_account_name=$TFSTATE_STORAGE_ACCOUNT" \
   -backend-config="container_name=$TFSTATE_CONTAINER" \
-  -backend-config="key=foundation-poc.tfstate" \
+  -backend-config="key=poc/foundation.tfstate" \
   -backend-config="use_azuread_auth=true"
 ```
 
-Then apply:
+Use `.github/workflows/infrastructure-apply.yml` for approved applies. For a local reviewed plan:
 
 ```bash
-terraform apply \
+terraform plan \
+  -var-file=../environments/poc/foundation.tfvars \
   -var="tfstate_resource_group_name=$TFSTATE_RESOURCE_GROUP" \
   -var="tfstate_storage_account_name=$TFSTATE_STORAGE_ACCOUNT" \
   -var="tfstate_container_name=$TFSTATE_CONTAINER" \
   -var="publisher_email=you@example.com"
 ```
 
-After foundation, run `scripts/cloud/postgres-bootstrap-noninteractive.sh`,
-then `scripts/cloud/run-ef-migrations.sh`, then
-`scripts/cloud/remove-servicebus-default-rules.sh`. The GitHub deploy workflow
-does this automatically after it opens the temporary PostgreSQL firewall rule.
+Database principals, EF migrations, and removal of Azure-created default Service Bus rules are data-plane deployment steps handled by `deploy-poc.yml` after a temporary runner firewall rule is opened.

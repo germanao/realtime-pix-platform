@@ -1,0 +1,58 @@
+name: terraform-drift
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: terraform-poc-drift
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  detect:
+    name: Detect POC drift
+    runs-on: ubuntu-latest
+    env:
+      TF_INPUT: "0"
+      TF_VAR_tfstate_resource_group_name: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+      TF_VAR_tfstate_storage_account_name: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+      TF_VAR_tfstate_container_name: ${{ vars.TFSTATE_CONTAINER }}
+      TF_VAR_publisher_email: ${{ vars.PUBLISHER_EMAIL || 'showcase@example.invalid' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_PLAN_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.11.4
+      - name: Check foundation drift
+        working-directory: infra/terraform/foundation
+        shell: bash
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=poc/foundation.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          terraform plan -lock=false -detailed-exitcode
+      - name: Check runtime drift
+        working-directory: infra/terraform/runtime
+        shell: bash
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=poc/runtime.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          DEPLOYED_IMAGE_TAG="$(terraform output -raw deployed_image_tag)"
+          terraform plan -lock=false -detailed-exitcode -var="image_tag=${DEPLOYED_IMAGE_TAG}"

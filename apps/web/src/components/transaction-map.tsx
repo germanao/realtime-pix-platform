@@ -66,12 +66,14 @@ const positions: Record<FlowNodeId, { x: number; y: number }> = {
   gateway: { x: 190, y: 125 },
   "transaction-start": { x: 380, y: 125 },
   "event-bus": { x: 570, y: 125 },
-  wallet: { x: 760, y: 125 },
-  "transaction-confirm": { x: 950, y: 125 },
-  realtime: { x: 1140, y: 125 },
-  "browser-end": { x: 1330, y: 125 },
+  "sender-bank": { x: 760, y: 125 },
+  "recipient-bank": { x: 950, y: 125 },
+  "transaction-confirm": { x: 1140, y: 125 },
+  realtime: { x: 1330, y: 125 },
+  "browser-end": { x: 1520, y: 125 },
+  compensation: { x: 760, y: 305 },
   presence: { x: 190, y: 305 },
-  bots: { x: 760, y: 305 }
+  bots: { x: 950, y: 305 }
 };
 
 export const simpleFlowLabels: Record<FlowNodeId, [string, string]> = {
@@ -79,10 +81,12 @@ export const simpleFlowLabels: Record<FlowNodeId, [string, string]> = {
   gateway: ["Front Door", "Receives your request"],
   "transaction-start": ["Transfer Coordinator", "Starts the journey"],
   "event-bus": ["Message Route", "Carries the update"],
-  wallet: ["Money Keeper", "Moves both balances"],
+  "sender-bank": ["Sender bank", "Debits your account"],
+  "recipient-bank": ["Recipient bank", "Credits their account"],
   "transaction-confirm": ["Completion Check", "Confirms the outcome"],
   realtime: ["Live Guide", "Reports every result"],
   "browser-end": ["Your result", "Shows what happened"],
+  compensation: ["Safety refund", "Returns a rejected PIX"],
   presence: ["Who's here", "Keeps people visible"],
   bots: ["Always available", "Demo participants"]
 };
@@ -92,10 +96,12 @@ export const expertFlowLabels: Record<FlowNodeId, [string, string]> = {
   gateway: ["api-gateway", "HTTP forwarding boundary"],
   "transaction-start": ["transaction-service / request", "Saga and idempotency"],
   "event-bus": ["integration event bus", "At-least-once delivery"],
-  wallet: ["wallet-ledger-service", "Debit, credit, ledger"],
+  "sender-bank": ["sender bank-ledger", "Conditional debit + outbox"],
+  "recipient-bank": ["recipient bank-ledger", "Idempotent credit + outbox"],
   "transaction-confirm": ["transaction-service / completion", "Final saga transition"],
   realtime: ["realtime-events-service", "SignalR projection"],
   "browser-end": ["React projection", "Client state update"],
+  compensation: ["Saga compensation", "RefundFunds command"],
   presence: ["identity-presence-service", "Connection ownership"],
   bots: ["bot-service", "Always-on participants"]
 };
@@ -105,10 +111,12 @@ const friendlyDetails: Record<FlowNodeId, string> = {
   gateway: "The front door safely forwards your request to the right place.",
   "transaction-start": "The coordinator gives the transfer an identity and starts the journey.",
   "event-bus": "A shared message route lets each part work independently.",
-  wallet: "The money keeper checks your balance, subtracts the value, and credits the recipient.",
+  "sender-bank": "Your bank checks the available balance and records one debit.",
+  "recipient-bank": "The recipient's bank records one independent credit.",
   "transaction-confirm": "The coordinator checks the outcome and closes the transfer exactly once.",
   realtime: "The live guide turns backend updates into the animation you are watching.",
   "browser-end": "Your screen receives the final result without requiring a refresh.",
+  compensation: "If the recipient cannot be credited, the coordinator asks your bank to refund the debit.",
   presence: "This service tracks who is currently available to receive a PIX.",
   bots: "Demo participants stay online so there is always someone available."
 };
@@ -126,7 +134,9 @@ function nodeIcon(nodeId: FlowNodeId) {
       return GitBranch;
     case "event-bus":
       return CloudCog;
-    case "wallet":
+    case "sender-bank":
+    case "recipient-bank":
+    case "compensation":
       return Database;
     case "realtime":
       return RadioTower;
@@ -284,8 +294,11 @@ export function TransactionMap({
           status: progress.nodes[nodeId].status,
           evidence: progress.nodes[nodeId].evidence,
           expertMode,
-          lane: nodeId === "presence" || nodeId === "bots" ? "supporting" : "primary",
-          acceptsSupport: nodeId === "gateway" || nodeId === "wallet"
+          lane:
+            nodeId === "presence" || nodeId === "bots" || nodeId === "compensation"
+              ? "supporting"
+              : "primary",
+          acceptsSupport: nodeId === "gateway" || nodeId === "sender-bank" || nodeId === "recipient-bank"
         },
         draggable: false,
         selectable: true
@@ -322,24 +335,47 @@ export function TransactionMap({
         className: "flowEdge supporting"
       },
       {
-        id: "bots-wallet",
+        id: "bots-recipient-bank",
         source: "bots",
-        target: "wallet",
+        target: "recipient-bank",
         sourceHandle: "support-source",
         targetHandle: "support-target",
         type: "straight",
         className: "flowEdge supporting"
+      },
+      {
+        id: "compensation-sender-bank",
+        source: "compensation",
+        target: "sender-bank",
+        sourceHandle: "support-source",
+        targetHandle: "support-target",
+        type: "straight",
+        animated: progress.nodes.compensation.status === "active",
+        className:
+          progress.nodes.compensation.status === "failure"
+            ? "flowEdge supporting failed"
+            : progress.nodes.compensation.status === "idle"
+              ? "flowEdge supporting"
+              : "flowEdge supporting reached"
       }
     ];
   }, [progress]);
 
   const selectedSteps = flow.filter((step) => {
-    if (selectedNodeId === "wallet") return step.stage === "wallet-ledger-service";
+    if (selectedNodeId === "sender-bank") {
+      return ["FundsDebited.v1", "FundsDebitRejected.v1", "FundsRefunded.v1", "FundsRefundRejected.v1"].includes(step.eventType);
+    }
+    if (selectedNodeId === "recipient-bank") {
+      return ["FundsCredited.v1", "FundsCreditRejected.v1"].includes(step.eventType);
+    }
+    if (selectedNodeId === "compensation") {
+      return ["FundsCreditRejected.v1", "PixSagaTimedOut.v1", "FundsRefunded.v1", "FundsRefundRejected.v1", "PixTransferCompensated.v1"].includes(step.eventType);
+    }
     if (selectedNodeId === "transaction-start") {
       return step.eventType === "PixTransferRequested.v1";
     }
     if (selectedNodeId === "transaction-confirm") {
-      return step.eventType === "PixTransferCompleted.v1" || step.eventType === "PixTransferFailed.v1";
+      return ["PixTransferCompleted.v1", "PixTransferCompleted.v2", "PixTransferFailed.v1", "PixTransferFailed.v2", "PixTransferCompensated.v1"].includes(step.eventType);
     }
     if (selectedNodeId === "realtime") return step.producer === "realtime-events-service";
     return false;
@@ -437,4 +473,3 @@ export function TransactionMap({
     </section>
   );
 }
-

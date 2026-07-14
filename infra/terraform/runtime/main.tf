@@ -1,15 +1,3 @@
-data "terraform_remote_state" "bootstrap" {
-  backend = "azurerm"
-
-  config = {
-    resource_group_name  = var.tfstate_resource_group_name
-    storage_account_name = var.tfstate_storage_account_name
-    container_name       = var.tfstate_container_name
-    key                  = "bootstrap.tfstate"
-    use_azuread_auth     = true
-  }
-}
-
 data "terraform_remote_state" "foundation" {
   backend = "azurerm"
 
@@ -17,671 +5,366 @@ data "terraform_remote_state" "foundation" {
     resource_group_name  = var.tfstate_resource_group_name
     storage_account_name = var.tfstate_storage_account_name
     container_name       = var.tfstate_container_name
-    key                  = "foundation-poc.tfstate"
+    key                  = "${var.environment_name}/foundation.tfstate"
     use_azuread_auth     = true
   }
 }
 
-data "azurerm_client_config" "current" {}
-
 locals {
   resource_group_name = data.terraform_remote_state.foundation.outputs.resource_group_name
+  location            = data.terraform_remote_state.foundation.outputs.location
   suffix              = data.terraform_remote_state.foundation.outputs.suffix
   acr_login_server    = data.terraform_remote_state.foundation.outputs.acr_login_server
   image_prefix        = "${local.acr_login_server}/realtime-pix"
-  key_vault_uri       = data.terraform_remote_state.foundation.outputs.key_vault_uri
-  common_tags         = merge(var.tags, { suffix = local.suffix })
+  common_tags = merge(var.tags, {
+    suffix      = local.suffix
+    environment = var.environment_name
+  })
 
-  common_env = [
-    { name = "ASPNETCORE_ENVIRONMENT", value = "Production" },
-    { name = "ASPNETCORE_URLS", value = "http://0.0.0.0:8080" },
-    { name = "ASPNETCORE_HTTP_PORTS", value = "8080" },
-    { name = "AppConfiguration__Endpoint", value = data.terraform_remote_state.foundation.outputs.app_configuration_endpoint },
-    { name = "AppConfiguration__Label", value = var.app_config_label },
-    { name = "EventBus__Provider", value = "ServiceBus" },
-    { name = "EventBus__ServiceBus__FullyQualifiedNamespace", value = data.terraform_remote_state.foundation.outputs.servicebus_fully_qualified_namespace },
-    { name = "EventBus__ServiceBus__TopicName", value = data.terraform_remote_state.foundation.outputs.servicebus_topic_name },
-    { name = "AzureSignalR__Endpoint", value = data.terraform_remote_state.foundation.outputs.signalr_endpoint },
-    { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", value = data.terraform_remote_state.foundation.outputs.application_insights_connection_string }
-  ]
+  cors_environment = merge(
+    {
+      Cors__AllowVercelPreviews = { value = tostring(var.allow_vercel_previews) }
+      Cors__VercelProjectName   = { value = var.vercel_preview_project_name }
+      Cors__VercelScopeSlug     = { value = var.vercel_preview_scope_slug }
+    },
+    {
+      for index, origin in var.allowed_cors_origins :
+      "Cors__AllowedOrigins__${index}" => { value = origin }
+    }
+  )
+  common_environment = merge({
+    ASPNETCORE_ENVIRONMENT = { value = "Production" }
+    ASPNETCORE_URLS        = { value = "http://0.0.0.0:8080" }
+    ASPNETCORE_HTTP_PORTS  = { value = "8080" }
+    AppConfiguration__Endpoint = {
+      value = data.terraform_remote_state.foundation.outputs.app_configuration_endpoint
+    }
+    AppConfiguration__Label = { value = var.app_config_label }
+    EventBus__Provider      = { value = "ServiceBus" }
+    EventBus__ServiceBus__FullyQualifiedNamespace = {
+      value = data.terraform_remote_state.foundation.outputs.servicebus_fully_qualified_namespace
+    }
+    EventBus__ServiceBus__TopicName = {
+      value = data.terraform_remote_state.foundation.outputs.servicebus_topic_name
+    }
+    AzureSignalR__Endpoint = {
+      value = data.terraform_remote_state.foundation.outputs.signalr_endpoint
+    }
+    APPLICATIONINSIGHTS_CONNECTION_STRING = {
+      value = data.terraform_remote_state.foundation.outputs.application_insights_connection_string
+    }
+  }, local.cors_environment)
 
-  public_api_operations = {
-    health = {
-      display_name = "Health"
-      method       = "GET"
-      url_template = "/health"
-      status_code  = 200
+  common_roles = {
+    acr_pull = {
+      scope                = data.terraform_remote_state.foundation.outputs.acr_id
+      role_definition_name = "AcrPull"
     }
-    health_live = {
-      display_name = "Liveness"
-      method       = "GET"
-      url_template = "/health/live"
-      status_code  = 200
+    app_configuration_reader = {
+      scope                = data.terraform_remote_state.foundation.outputs.app_configuration_id
+      role_definition_name = "App Configuration Data Reader"
     }
-    health_ready = {
-      display_name = "Readiness"
-      method       = "GET"
-      url_template = "/health/ready"
-      status_code  = 200
+  }
+
+  topic_sender = {
+    servicebus_topic_sender = {
+      scope                = data.terraform_remote_state.foundation.outputs.servicebus_topic_id
+      role_definition_name = "Azure Service Bus Data Sender"
     }
-    sessions_anonymous = {
-      display_name = "Create anonymous session"
-      method       = "POST"
-      url_template = "/sessions/anonymous"
-      status_code  = 200
-    }
-    presence_users = {
-      display_name = "List active users"
-      method       = "GET"
-      url_template = "/presence/users"
-      status_code  = 200
-    }
-    presence_heartbeat = {
-      display_name = "Presence heartbeat"
-      method       = "POST"
-      url_template = "/presence/heartbeat"
-      status_code  = 200
-    }
-    presence_leave = {
-      display_name = "Leave presence"
-      method       = "POST"
-      url_template = "/presence/leave"
-      status_code  = 200
-    }
-    wallet_accounts = {
-      display_name = "List wallet accounts"
-      method       = "GET"
-      url_template = "/wallet/accounts"
-      status_code  = 200
-    }
-    wallet_bootstrap = {
-      display_name        = "Bootstrap user wallet"
-      method              = "POST"
-      url_template        = "/wallet/users/{userId}/bootstrap"
-      status_code         = 200
-      template_parameters = ["userId"]
-    }
-    wallet_deposit = {
-      display_name        = "Deposit funds"
-      method              = "POST"
-      url_template        = "/wallet/accounts/{accountId}/deposit"
-      status_code         = 200
-      template_parameters = ["accountId"]
-    }
-    wallet_transactions = {
-      display_name        = "Account transactions"
-      method              = "GET"
-      url_template        = "/wallet/accounts/{accountId}/transactions"
-      status_code         = 200
-      template_parameters = ["accountId"]
-    }
-    pix_transfers = {
-      display_name = "Request PIX transfer"
-      method       = "POST"
-      url_template = "/pix/transfers"
-      status_code  = 202
-    }
-    pix_transfer_by_id = {
-      display_name        = "Get PIX transfer"
-      method              = "GET"
-      url_template        = "/pix/transfers/{transferId}"
-      status_code         = 200
-      template_parameters = ["transferId"]
-    }
-    realtime_token = {
-      display_name = "Realtime token"
-      method       = "GET"
-      url_template = "/realtime/token"
-      status_code  = 200
-    }
-    events_timeline = {
-      display_name = "Public event timeline"
-      method       = "GET"
-      url_template = "/events/timeline"
-      status_code  = 200
-    }
-    transfer_flow = {
-      display_name        = "Transfer architecture flow"
-      method              = "GET"
-      url_template        = "/events/transfers/{transferId}/flow"
-      status_code         = 200
-      template_parameters = ["transferId"]
-    }
+  }
+
+  workload_roles = {
+    api_gateway = local.common_roles
+    identity_presence = merge(local.common_roles, local.topic_sender, {
+      signalr_server = {
+        scope                = data.terraform_remote_state.foundation.outputs.signalr_id
+        role_definition_name = "SignalR App Server"
+      }
+    })
+    bank_a = merge(local.common_roles, local.topic_sender, {
+      bank_commands_receiver = {
+        scope                = data.terraform_remote_state.foundation.outputs.bank_command_queue_ids["bank-a-commands"]
+        role_definition_name = "Azure Service Bus Data Receiver"
+      }
+    })
+    bank_b = merge(local.common_roles, local.topic_sender, {
+      bank_commands_receiver = {
+        scope                = data.terraform_remote_state.foundation.outputs.bank_command_queue_ids["bank-b-commands"]
+        role_definition_name = "Azure Service Bus Data Receiver"
+      }
+    })
+    transaction = merge(local.common_roles, local.topic_sender, {
+      saga_outcomes_receiver = {
+        scope                = data.terraform_remote_state.foundation.outputs.servicebus_subscription_ids["transaction"]
+        role_definition_name = "Azure Service Bus Data Receiver"
+      }
+      bank_a_commands_sender = {
+        scope                = data.terraform_remote_state.foundation.outputs.bank_command_queue_ids["bank-a-commands"]
+        role_definition_name = "Azure Service Bus Data Sender"
+      }
+      bank_b_commands_sender = {
+        scope                = data.terraform_remote_state.foundation.outputs.bank_command_queue_ids["bank-b-commands"]
+        role_definition_name = "Azure Service Bus Data Sender"
+      }
+    })
+    realtime_events = merge(local.common_roles, local.topic_sender, {
+      projection_events_receiver = {
+        scope                = data.terraform_remote_state.foundation.outputs.servicebus_subscription_ids["realtime-events-v2"]
+        role_definition_name = "Azure Service Bus Data Receiver"
+      }
+      signalr_server = {
+        scope                = data.terraform_remote_state.foundation.outputs.signalr_id
+        role_definition_name = "SignalR App Server"
+      }
+    })
+    bot           = merge(local.common_roles, local.topic_sender)
+    legacy_wallet = local.common_roles
   }
 }
 
-resource "azurerm_user_assigned_identity" "container_apps" {
-  name                = "id-${var.project_name}-apps-${var.environment_name}-${local.suffix}"
+module "workload_identity" {
+  for_each = local.workload_roles
+  source   = "../modules/workload-identity"
+
+  name                = "id-${var.project_name}-${replace(each.key, "_", "-")}-${var.environment_name}-${local.suffix}"
   resource_group_name = local.resource_group_name
-  location            = data.terraform_remote_state.foundation.outputs.location
+  location            = local.location
+  role_assignments    = each.value
   tags                = local.common_tags
 }
 
-resource "azurerm_role_assignment" "apps_acr_pull" {
-  scope                = data.terraform_remote_state.foundation.outputs.acr_id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_user_assigned_identity.container_apps.principal_id
+locals {
+  internal_apps = {
+    identity_presence = {
+      name           = "ca-presence-${var.environment_name}-${local.suffix}"
+      container_name = "identity-presence-service"
+      image          = "${local.image_prefix}/identity-presence-service:${var.image_tag}"
+      identity_key   = "identity_presence"
+      environment = merge(local.common_environment, {
+        AZURE_CLIENT_ID = { value = module.workload_identity["identity_presence"].client_id }
+        ConnectionStrings__Default = {
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=identity_presence_db;Username=${module.workload_identity["identity_presence"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+        }
+        Postgres__UseManagedIdentity = { value = "true" }
+      })
+      secrets = {}
+      ingress = {
+        external_enabled       = true
+        target_port            = 8080
+        cors_allowed_origins   = []
+        cors_allow_credentials = false
+      }
+      scale = { min_replicas = 1, max_replicas = 1 }
+    }
+    bank_a = {
+      name           = "ca-bank-a-${var.environment_name}-${local.suffix}"
+      container_name = "bank-a-ledger-service"
+      image          = "${local.image_prefix}/bank-ledger-service:${var.image_tag}"
+      identity_key   = "bank_a"
+      environment = merge(local.common_environment, {
+        AZURE_CLIENT_ID = { value = module.workload_identity["bank_a"].client_id }
+        ConnectionStrings__Default = {
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=bank_a_ledger_db;Username=${module.workload_identity["bank_a"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+        }
+        Postgres__UseManagedIdentity    = { value = "true" }
+        Bank__Id                        = { value = "bank-a" }
+        Bank__Name                      = { value = "Aurora Bank" }
+        Bank__WelcomeBalance            = { value = "10000" }
+        EventBus__ServiceBus__QueueName = { value = "bank-a-commands" }
+      })
+      secrets = {}
+      ingress = {
+        external_enabled       = false
+        target_port            = 8080
+        cors_allowed_origins   = []
+        cors_allow_credentials = false
+      }
+      scale = { min_replicas = 1, max_replicas = 1 }
+    }
+    bank_b = {
+      name           = "ca-bank-b-${var.environment_name}-${local.suffix}"
+      container_name = "bank-b-ledger-service"
+      image          = "${local.image_prefix}/bank-ledger-service:${var.image_tag}"
+      identity_key   = "bank_b"
+      environment = merge(local.common_environment, {
+        AZURE_CLIENT_ID = { value = module.workload_identity["bank_b"].client_id }
+        ConnectionStrings__Default = {
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=bank_b_ledger_db;Username=${module.workload_identity["bank_b"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+        }
+        Postgres__UseManagedIdentity    = { value = "true" }
+        Bank__Id                        = { value = "bank-b" }
+        Bank__Name                      = { value = "Boreal Bank" }
+        Bank__WelcomeBalance            = { value = "0" }
+        EventBus__ServiceBus__QueueName = { value = "bank-b-commands" }
+      })
+      secrets = {}
+      ingress = {
+        external_enabled       = false
+        target_port            = 8080
+        cors_allowed_origins   = []
+        cors_allow_credentials = false
+      }
+      scale = { min_replicas = 1, max_replicas = 1 }
+    }
+    transaction = {
+      name           = "ca-tx-${var.environment_name}-${local.suffix}"
+      container_name = "transaction-service"
+      image          = "${local.image_prefix}/transaction-service:${var.image_tag}"
+      identity_key   = "transaction"
+      environment = merge(local.common_environment, {
+        AZURE_CLIENT_ID = { value = module.workload_identity["transaction"].client_id }
+        ConnectionStrings__Default = {
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=transaction_db;Username=${module.workload_identity["transaction"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+        }
+        Postgres__UseManagedIdentity           = { value = "true" }
+        EventBus__ServiceBus__SubscriptionName = { value = "transaction" }
+        Saga__AllowFailureSimulation           = { value = "true" }
+        Saga__StepTimeoutSeconds               = { value = "30" }
+        Saga__SimulatedCreditTimeoutSeconds    = { value = "8" }
+        Saga__CompensationTimeoutSeconds       = { value = "30" }
+      })
+      secrets = {}
+      ingress = {
+        external_enabled       = false
+        target_port            = 8080
+        cors_allowed_origins   = []
+        cors_allow_credentials = false
+      }
+      scale = { min_replicas = 1, max_replicas = 1 }
+    }
+    realtime_events = {
+      name           = "ca-events-${var.environment_name}-${local.suffix}"
+      container_name = "realtime-events-service"
+      image          = "${local.image_prefix}/realtime-events-service:${var.image_tag}"
+      identity_key   = "realtime_events"
+      environment = merge(local.common_environment, {
+        AZURE_CLIENT_ID = { value = module.workload_identity["realtime_events"].client_id }
+        ConnectionStrings__Default = {
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=realtime_projection_db;Username=${module.workload_identity["realtime_events"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+        }
+        Postgres__UseManagedIdentity           = { value = "true" }
+        EventBus__ServiceBus__SubscriptionName = { value = "realtime-events-v2" }
+      })
+      secrets = {}
+      ingress = {
+        external_enabled       = true
+        target_port            = 8080
+        cors_allowed_origins   = []
+        cors_allow_credentials = false
+      }
+      scale = { min_replicas = 1, max_replicas = 1 }
+    }
+  }
 }
 
-resource "azurerm_role_assignment" "apps_keyvault_secrets_user" {
-  scope                = data.terraform_remote_state.foundation.outputs.key_vault_id
-  role_definition_name = "Key Vault Secrets User"
-  principal_id         = azurerm_user_assigned_identity.container_apps.principal_id
-}
+module "internal_apps" {
+  for_each = local.internal_apps
+  source   = "../modules/container-app"
 
-resource "azurerm_container_app" "identity_presence" {
-  name                         = "ca-presence-${var.environment_name}-${local.suffix}"
+  name                         = each.value.name
+  container_name               = each.value.container_name
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
-  revision_mode                = "Single"
+  identity_id                  = module.workload_identity[each.value.identity_key].id
+  registry                     = { server = local.acr_login_server }
+  image                        = each.value.image
+  environment                  = each.value.environment
+  secrets                      = each.value.secrets
+  ingress                      = each.value.ingress
+  scale                        = each.value.scale
   tags                         = local.common_tags
 
-  identity {
-    type         = "SystemAssigned, UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.container_apps.id]
-  }
-
-  registry {
-    server   = local.acr_login_server
-    identity = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  secret {
-    name                = "identity-db"
-    key_vault_secret_id = "${local.key_vault_uri}secrets/identity-db"
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  secret {
-    name                = "signalr-connection-string"
-    key_vault_secret_id = "${local.key_vault_uri}secrets/signalr-connection-string"
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  ingress {
-    external_enabled           = true
-    target_port                = 8080
-    transport                  = "auto"
-    allow_insecure_connections = false
-
-    cors {
-      allowed_origins           = var.allowed_cors_origins
-      allowed_methods           = ["GET", "POST", "OPTIONS"]
-      allowed_headers           = ["*"]
-      allow_credentials_enabled = true
-    }
-
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
-
-  template {
-    min_replicas = 1
-    max_replicas = 1
-
-    container {
-      name   = "identity-presence-service"
-      image  = "${local.image_prefix}/identity-presence-service:${var.image_tag}"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      dynamic "env" {
-        for_each = local.common_env
-        content {
-          name  = env.value.name
-          value = env.value.value
-        }
-      }
-
-      env {
-        name        = "ConnectionStrings__Default"
-        secret_name = "identity-db"
-      }
-
-      env {
-        name        = "AzureSignalR__ConnectionString"
-        secret_name = "signalr-connection-string"
-      }
-
-      liveness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/live"
-      }
-
-      readiness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/ready"
-      }
-    }
-  }
-
-  depends_on = [
-    azurerm_role_assignment.apps_acr_pull,
-    azurerm_role_assignment.apps_keyvault_secrets_user
-  ]
+  depends_on = [module.workload_identity]
 }
 
-resource "azurerm_container_app" "wallet_ledger" {
-  name                         = "ca-wallet-${var.environment_name}-${local.suffix}"
-  container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
-  resource_group_name          = local.resource_group_name
-  revision_mode                = "Single"
-  tags                         = local.common_tags
+module "api_gateway" {
+  source = "../modules/container-app"
 
-  identity {
-    type         = "SystemAssigned, UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.container_apps.id]
-  }
-
-  registry {
-    server   = local.acr_login_server
-    identity = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  secret {
-    name                = "wallet-db"
-    key_vault_secret_id = "${local.key_vault_uri}secrets/wallet-db"
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  ingress {
-    external_enabled           = false
-    target_port                = 8080
-    transport                  = "auto"
-    allow_insecure_connections = false
-
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
-
-  template {
-    min_replicas = 1
-    max_replicas = 1
-
-    container {
-      name   = "wallet-ledger-service"
-      image  = "${local.image_prefix}/wallet-ledger-service:${var.image_tag}"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      dynamic "env" {
-        for_each = local.common_env
-        content {
-          name  = env.value.name
-          value = env.value.value
-        }
-      }
-
-      env {
-        name        = "ConnectionStrings__Default"
-        secret_name = "wallet-db"
-      }
-
-      liveness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/live"
-      }
-
-      readiness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/ready"
-      }
-    }
-  }
-
-  depends_on = [
-    azurerm_role_assignment.apps_acr_pull,
-    azurerm_role_assignment.apps_keyvault_secrets_user
-  ]
-}
-
-resource "azurerm_container_app" "transaction" {
-  name                         = "ca-tx-${var.environment_name}-${local.suffix}"
-  container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
-  resource_group_name          = local.resource_group_name
-  revision_mode                = "Single"
-  tags                         = local.common_tags
-
-  identity {
-    type         = "SystemAssigned, UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.container_apps.id]
-  }
-
-  registry {
-    server   = local.acr_login_server
-    identity = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  secret {
-    name                = "transaction-db"
-    key_vault_secret_id = "${local.key_vault_uri}secrets/transaction-db"
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  ingress {
-    external_enabled           = false
-    target_port                = 8080
-    transport                  = "auto"
-    allow_insecure_connections = false
-
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
-
-  template {
-    min_replicas = 1
-    max_replicas = 1
-
-    container {
-      name   = "transaction-service"
-      image  = "${local.image_prefix}/transaction-service:${var.image_tag}"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      dynamic "env" {
-        for_each = local.common_env
-        content {
-          name  = env.value.name
-          value = env.value.value
-        }
-      }
-
-      env {
-        name        = "ConnectionStrings__Default"
-        secret_name = "transaction-db"
-      }
-
-      liveness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/live"
-      }
-
-      readiness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/ready"
-      }
-    }
-  }
-
-  depends_on = [
-    azurerm_role_assignment.apps_acr_pull,
-    azurerm_role_assignment.apps_keyvault_secrets_user
-  ]
-}
-
-resource "azurerm_container_app" "realtime_events" {
-  name                         = "ca-events-${var.environment_name}-${local.suffix}"
-  container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
-  resource_group_name          = local.resource_group_name
-  revision_mode                = "Single"
-  tags                         = local.common_tags
-
-  identity {
-    type         = "SystemAssigned, UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.container_apps.id]
-  }
-
-  registry {
-    server   = local.acr_login_server
-    identity = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  secret {
-    name                = "realtime-db"
-    key_vault_secret_id = "${local.key_vault_uri}secrets/realtime-db"
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  secret {
-    name                = "signalr-connection-string"
-    key_vault_secret_id = "${local.key_vault_uri}secrets/signalr-connection-string"
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  ingress {
-    external_enabled           = true
-    target_port                = 8080
-    transport                  = "auto"
-    allow_insecure_connections = false
-
-    cors {
-      allowed_origins           = var.allowed_cors_origins
-      allowed_methods           = ["GET", "POST", "OPTIONS"]
-      allowed_headers           = ["*"]
-      allow_credentials_enabled = true
-    }
-
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
-
-  template {
-    min_replicas = 1
-    max_replicas = 1
-
-    container {
-      name   = "realtime-events-service"
-      image  = "${local.image_prefix}/realtime-events-service:${var.image_tag}"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      dynamic "env" {
-        for_each = local.common_env
-        content {
-          name  = env.value.name
-          value = env.value.value
-        }
-      }
-
-      env {
-        name        = "ConnectionStrings__Default"
-        secret_name = "realtime-db"
-      }
-
-      env {
-        name        = "AzureSignalR__ConnectionString"
-        secret_name = "signalr-connection-string"
-      }
-
-      env {
-        name  = "EventBus__ServiceBus__SubscriptionName"
-        value = "realtime-events-v2"
-      }
-
-      liveness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/live"
-      }
-
-      readiness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/ready"
-      }
-    }
-  }
-
-  depends_on = [
-    azurerm_role_assignment.apps_acr_pull,
-    azurerm_role_assignment.apps_keyvault_secrets_user
-  ]
-}
-
-resource "azurerm_container_app" "api_gateway" {
   name                         = "ca-api-${var.environment_name}-${local.suffix}"
+  container_name               = "api-gateway"
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
-  revision_mode                = "Single"
-  tags                         = local.common_tags
-
-  identity {
-    type         = "SystemAssigned, UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.container_apps.id]
+  identity_id                  = module.workload_identity["api_gateway"].id
+  registry                     = { server = local.acr_login_server }
+  image                        = "${local.image_prefix}/api-gateway:${var.image_tag}"
+  environment = merge(local.common_environment, {
+    AZURE_CLIENT_ID            = { value = module.workload_identity["api_gateway"].client_id }
+    Services__IdentityPresence = { value = "https://${module.internal_apps["identity_presence"].fqdn}" }
+    Services__BankA            = { value = "https://${module.internal_apps["bank_a"].fqdn}" }
+    Services__BankB            = { value = "https://${module.internal_apps["bank_b"].fqdn}" }
+    Services__Transaction      = { value = "https://${module.internal_apps["transaction"].fqdn}" }
+    Services__RealtimeEvents   = { value = "https://${module.internal_apps["realtime_events"].fqdn}" }
+  })
+  ingress = {
+    external_enabled       = true
+    target_port            = 8080
+    cors_allowed_origins   = []
+    cors_allow_credentials = false
   }
+  scale = { min_replicas = 1, max_replicas = 2 }
+  tags  = local.common_tags
 
-  registry {
-    server   = local.acr_login_server
-    identity = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  ingress {
-    external_enabled           = true
-    target_port                = 8080
-    transport                  = "auto"
-    allow_insecure_connections = false
-
-    cors {
-      allowed_origins = var.allowed_cors_origins
-      allowed_methods = ["GET", "POST", "OPTIONS"]
-      allowed_headers = ["*"]
-    }
-
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
-
-  template {
-    min_replicas = 1
-    max_replicas = 2
-
-    container {
-      name   = "api-gateway"
-      image  = "${local.image_prefix}/api-gateway:${var.image_tag}"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      dynamic "env" {
-        for_each = local.common_env
-        content {
-          name  = env.value.name
-          value = env.value.value
-        }
-      }
-
-      env {
-        name  = "Services__IdentityPresence"
-        value = "https://${azurerm_container_app.identity_presence.ingress[0].fqdn}"
-      }
-      env {
-        name  = "Services__WalletLedger"
-        value = "https://${azurerm_container_app.wallet_ledger.ingress[0].fqdn}"
-      }
-      env {
-        name  = "Services__Transaction"
-        value = "https://${azurerm_container_app.transaction.ingress[0].fqdn}"
-      }
-      env {
-        name  = "Services__RealtimeEvents"
-        value = "https://${azurerm_container_app.realtime_events.ingress[0].fqdn}"
-      }
-
-      liveness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/live"
-      }
-
-      readiness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/ready"
-      }
-    }
-  }
-
-  depends_on = [azurerm_role_assignment.apps_acr_pull]
+  depends_on = [module.internal_apps]
 }
 
-resource "azurerm_container_app" "bot" {
+module "bot" {
+  source = "../modules/container-app"
+
   name                         = "ca-bot-${var.environment_name}-${local.suffix}"
+  container_name               = "bot-service"
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
-  revision_mode                = "Single"
-  tags                         = local.common_tags
+  identity_id                  = module.workload_identity["bot"].id
+  registry                     = { server = local.acr_login_server }
+  image                        = "${local.image_prefix}/bot-service:${var.image_tag}"
+  environment = merge(local.common_environment, {
+    AZURE_CLIENT_ID  = { value = module.workload_identity["bot"].client_id }
+    WalletServiceUrl = { value = "https://${module.api_gateway.fqdn}" }
+  })
+  ingress = null
+  scale   = { min_replicas = 1, max_replicas = 1 }
+  tags    = local.common_tags
 
-  identity {
-    type         = "SystemAssigned, UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.container_apps.id]
+  depends_on = [module.api_gateway]
+}
+
+module "legacy_wallet" {
+  source = "../modules/container-app"
+
+  name                         = "ca-wallet-${var.environment_name}-${local.suffix}"
+  container_name               = "wallet-ledger-service"
+  container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
+  resource_group_name          = local.resource_group_name
+  identity_id                  = module.workload_identity["legacy_wallet"].id
+  registry                     = { server = local.acr_login_server }
+  image                        = "${local.image_prefix}/wallet-ledger-service:${var.image_tag}"
+  environment = merge(local.common_environment, {
+    AZURE_CLIENT_ID                        = { value = module.workload_identity["legacy_wallet"].client_id }
+    EventBus__ServiceBus__SubscriptionName = { value = "wallet-ledger" }
+  })
+  secrets = {}
+  ingress = {
+    external_enabled       = false
+    target_port            = 8080
+    cors_allowed_origins   = []
+    cors_allow_credentials = false
   }
-
-  registry {
-    server   = local.acr_login_server
-    identity = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  template {
-    min_replicas = 1
-    max_replicas = 1
-
-    container {
-      name   = "bot-service"
-      image  = "${local.image_prefix}/bot-service:${var.image_tag}"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      dynamic "env" {
-        for_each = local.common_env
-        content {
-          name  = env.value.name
-          value = env.value.value
-        }
-      }
-
-      env {
-        name  = "WalletServiceUrl"
-        value = "https://${azurerm_container_app.wallet_ledger.ingress[0].fqdn}"
-      }
-
-      liveness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health/live"
-      }
-    }
-  }
-
-  depends_on = [azurerm_role_assignment.apps_acr_pull]
+  scale = { min_replicas = 0, max_replicas = 1 }
+  tags  = merge(local.common_tags, { lifecycle = "legacy-one-release" })
 }
 
 locals {
-  app_principal_ids = {
-    api_gateway       = azurerm_container_app.api_gateway.identity[0].principal_id
-    identity_presence = azurerm_container_app.identity_presence.identity[0].principal_id
-    wallet_ledger     = azurerm_container_app.wallet_ledger.identity[0].principal_id
-    transaction       = azurerm_container_app.transaction.identity[0].principal_id
-    realtime_events   = azurerm_container_app.realtime_events.identity[0].principal_id
-    bot               = azurerm_container_app.bot.identity[0].principal_id
-  }
-
-  container_app_ids = {
-    api_gateway       = azurerm_container_app.api_gateway.id
-    identity_presence = azurerm_container_app.identity_presence.id
-    wallet_ledger     = azurerm_container_app.wallet_ledger.id
-    transaction       = azurerm_container_app.transaction.id
-    realtime_events   = azurerm_container_app.realtime_events.id
-    bot               = azurerm_container_app.bot.id
-  }
+  active_container_app_ids = merge(
+    { for key, app in module.internal_apps : key => app.id },
+    {
+      api_gateway = module.api_gateway.id
+      bot         = module.bot.id
+    }
+  )
 }
 
 resource "azurerm_monitor_metric_alert" "container_app_restarts" {
-  for_each            = local.container_app_ids
+  for_each            = local.active_container_app_ids
   name                = "alert-${var.project_name}-${var.environment_name}-${replace(each.key, "_", "-")}-restarts-${local.suffix}"
   resource_group_name = local.resource_group_name
   scopes              = [each.value]
@@ -704,205 +387,32 @@ resource "azurerm_monitor_metric_alert" "container_app_restarts" {
   }
 }
 
-resource "azurerm_role_assignment" "servicebus_data_sender" {
-  for_each             = local.app_principal_ids
-  scope                = data.terraform_remote_state.foundation.outputs.servicebus_namespace_id
-  role_definition_name = "Azure Service Bus Data Sender"
-  principal_id         = each.value
+moved {
+  from = azurerm_container_app.identity_presence
+  to   = module.internal_apps["identity_presence"].azurerm_container_app.this
 }
 
-resource "azurerm_role_assignment" "servicebus_data_receiver" {
-  for_each = {
-    wallet_ledger   = local.app_principal_ids.wallet_ledger
-    transaction     = local.app_principal_ids.transaction
-    realtime_events = local.app_principal_ids.realtime_events
-  }
-
-  scope                = data.terraform_remote_state.foundation.outputs.servicebus_namespace_id
-  role_definition_name = "Azure Service Bus Data Receiver"
-  principal_id         = each.value
+moved {
+  from = azurerm_container_app.transaction
+  to   = module.internal_apps["transaction"].azurerm_container_app.this
 }
 
-resource "azurerm_role_assignment" "appconfig_data_reader" {
-  for_each             = local.app_principal_ids
-  scope                = data.terraform_remote_state.foundation.outputs.app_configuration_id
-  role_definition_name = "App Configuration Data Reader"
-  principal_id         = each.value
+moved {
+  from = azurerm_container_app.realtime_events
+  to   = module.internal_apps["realtime_events"].azurerm_container_app.this
 }
 
-resource "azurerm_role_assignment" "signalr_app_server" {
-  for_each = {
-    identity_presence = local.app_principal_ids.identity_presence
-    realtime_events   = local.app_principal_ids.realtime_events
-  }
-
-  scope                = data.terraform_remote_state.foundation.outputs.signalr_id
-  role_definition_name = "SignalR App Server"
-  principal_id         = each.value
+moved {
+  from = azurerm_container_app.api_gateway
+  to   = module.api_gateway.azurerm_container_app.this
 }
 
-resource "azurerm_api_management_api" "gateway" {
-  name                  = "realtime-pix-gateway"
-  resource_group_name   = local.resource_group_name
-  api_management_name   = data.terraform_remote_state.foundation.outputs.apim_name
-  revision              = "1"
-  display_name          = "Realtime PIX Gateway"
-  path                  = "api"
-  protocols             = ["https"]
-  subscription_required = false
-  service_url           = "https://${azurerm_container_app.api_gateway.ingress[0].fqdn}"
+moved {
+  from = azurerm_container_app.bot
+  to   = module.bot.azurerm_container_app.this
 }
 
-resource "azurerm_api_management_api_operation" "public_routes" {
-  for_each            = local.public_api_operations
-  operation_id        = each.key
-  api_name            = azurerm_api_management_api.gateway.name
-  api_management_name = data.terraform_remote_state.foundation.outputs.apim_name
-  resource_group_name = local.resource_group_name
-  display_name        = each.value.display_name
-  method              = each.value.method
-  url_template        = each.value.url_template
-
-  dynamic "template_parameter" {
-    for_each = try(each.value.template_parameters, [])
-    content {
-      name     = template_parameter.value
-      type     = "string"
-      required = true
-    }
-  }
-
-  response {
-    status_code = each.value.status_code
-  }
+moved {
+  from = azurerm_container_app.wallet_ledger
+  to   = module.legacy_wallet.azurerm_container_app.this
 }
-
-# APIM does not forward an OPTIONS request when it has no matching operation.
-# Define one preflight operation for every browser-visible route and only echo
-# the current origin after validating it against the public frontend origins.
-resource "azurerm_api_management_api_operation" "browser_preflight" {
-  for_each            = local.public_api_operations
-  operation_id        = "preflight-${each.key}"
-  api_name            = azurerm_api_management_api.gateway.name
-  api_management_name = data.terraform_remote_state.foundation.outputs.apim_name
-  resource_group_name = local.resource_group_name
-  display_name        = "Browser preflight: ${each.value.display_name}"
-  method              = "OPTIONS"
-  url_template        = each.value.url_template
-
-  dynamic "template_parameter" {
-    for_each = try(each.value.template_parameters, [])
-    content {
-      name     = template_parameter.value
-      type     = "string"
-      required = true
-    }
-  }
-
-  response {
-    status_code = 204
-  }
-}
-
-resource "azurerm_api_management_api_operation_policy" "browser_preflight" {
-  for_each            = local.public_api_operations
-  api_name            = azurerm_api_management_api.gateway.name
-  api_management_name = data.terraform_remote_state.foundation.outputs.apim_name
-  resource_group_name = local.resource_group_name
-  operation_id        = azurerm_api_management_api_operation.browser_preflight[each.key].operation_id
-
-  xml_content = <<-XML
-    <policies>
-      <inbound>
-        <base />
-        <choose>
-          <when condition='@{
-            var origin = context.Request.Headers.GetValueOrDefault("Origin", "");
-            return origin == "http://localhost:3000"
-              || origin == "https://realtime-pix-web.vercel.app"
-              || (origin.StartsWith("https://realtime-pix-web-") &amp;&amp; origin.EndsWith(".vercel.app"));
-          }'>
-            <return-response>
-              <set-status code="204" reason="No Content" />
-              <set-header name="Access-Control-Allow-Origin" exists-action="override">
-                <value>@(context.Request.Headers.GetValueOrDefault("Origin", ""))</value>
-              </set-header>
-              <set-header name="Access-Control-Allow-Methods" exists-action="override">
-                <value>GET, POST, OPTIONS</value>
-              </set-header>
-              <set-header name="Access-Control-Allow-Headers" exists-action="override">
-                <value>content-type, accept</value>
-              </set-header>
-              <set-header name="Access-Control-Max-Age" exists-action="override">
-                <value>300</value>
-              </set-header>
-              <set-header name="Vary" exists-action="override">
-                <value>Origin</value>
-              </set-header>
-            </return-response>
-          </when>
-          <otherwise>
-            <return-response>
-              <set-status code="204" reason="No Content" />
-            </return-response>
-          </otherwise>
-        </choose>
-      </inbound>
-      <backend><base /></backend>
-      <outbound><base /></outbound>
-      <on-error><base /></on-error>
-    </policies>
-  XML
-}
-
-resource "azurerm_api_management_api_policy" "browser_cors" {
-  api_name            = azurerm_api_management_api.gateway.name
-  api_management_name = data.terraform_remote_state.foundation.outputs.apim_name
-  resource_group_name = local.resource_group_name
-
-  xml_content = <<-XML
-    <policies>
-      <inbound><base /></inbound>
-      <backend><base /></backend>
-      <outbound>
-        <base />
-        <choose>
-          <when condition='@{
-            var origin = context.Request.Headers.GetValueOrDefault("Origin", "");
-            return origin == "http://localhost:3000"
-              || origin == "https://realtime-pix-web.vercel.app"
-              || (origin.StartsWith("https://realtime-pix-web-") &amp;&amp; origin.EndsWith(".vercel.app"));
-          }'>
-            <set-header name="Access-Control-Allow-Origin" exists-action="override">
-              <value>@(context.Request.Headers.GetValueOrDefault("Origin", ""))</value>
-            </set-header>
-            <set-header name="Vary" exists-action="override">
-              <value>Origin</value>
-            </set-header>
-          </when>
-        </choose>
-      </outbound>
-      <on-error>
-        <base />
-        <choose>
-          <when condition='@{
-            var origin = context.Request.Headers.GetValueOrDefault("Origin", "");
-            return origin == "http://localhost:3000"
-              || origin == "https://realtime-pix-web.vercel.app"
-              || (origin.StartsWith("https://realtime-pix-web-") &amp;&amp; origin.EndsWith(".vercel.app"));
-          }'>
-            <set-header name="Access-Control-Allow-Origin" exists-action="override">
-              <value>@(context.Request.Headers.GetValueOrDefault("Origin", ""))</value>
-            </set-header>
-            <set-header name="Vary" exists-action="override">
-              <value>Origin</value>
-            </set-header>
-          </when>
-        </choose>
-      </on-error>
-    </policies>
-  XML
-
-  depends_on = [azurerm_api_management_api_operation.public_routes]
-}
-

@@ -6,6 +6,7 @@ public sealed class FileEventBusOptions
 
     public string ConsumerName { get; set; } = Environment.MachineName;
 
+    public string? QueueName { get; set; }
+
     public int PollIntervalMilliseconds { get; set; } = 500;
 }
-

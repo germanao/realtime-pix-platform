@@ -12,6 +12,10 @@ const primaryJourneyOrder = [
   "browser-end"
 ] as const;
 
+async function expectPlatformLive(page: Page) {
+  await expect(page.getByText("Live", { exact: true })).toBeVisible({ timeout: 30_000 });
+}
+
 async function expectProceduralReplay(page: Page) {
   for (const [activeIndex, nodeId] of primaryJourneyOrder.entries()) {
     await expect(
@@ -55,7 +59,7 @@ test("simple mode sends one PIX, preserves context in Expert mode, and grants we
   });
 
   await page.goto("/");
-  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await expectPlatformLive(page);
   await expect(page.getByRole("heading", { name: "$10,000.00" })).toBeVisible();
   await expect(page.locator(".mapCanvas").getByText("Front Door", { exact: true })).toBeVisible();
   await expect(page.getByText("api-gateway", { exact: true })).toHaveCount(0);
@@ -96,7 +100,7 @@ test("simple mode sends one PIX, preserves context in Expert mode, and grants we
 test("desktop balance and journey geometry stay separated at the reported viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1528, height: 760 });
   await page.goto("/");
-  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await expectPlatformLive(page);
   await expect(page.getByRole("heading", { name: "$10,000.00" })).toBeVisible();
 
   const heroGeometry = await page.evaluate(() => {
@@ -165,7 +169,7 @@ test("desktop balance and journey geometry stay separated at the reported viewpo
 test("mobile mode uses the vertical journey without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await expectPlatformLive(page);
   await expect(page.locator(".mobileJourney")).toBeVisible();
   await expect(page.locator(".mapCanvas")).toBeHidden();
 
@@ -183,9 +187,9 @@ test("presence appears and disappears immediately across two browser sessions", 
   const secondPage = await secondContext.newPage();
 
   await firstPage.goto("/");
-  await expect(firstPage.getByText("Live", { exact: true })).toBeVisible();
+  await expectPlatformLive(firstPage);
   await secondPage.goto("/");
-  await expect(secondPage.getByText("Live", { exact: true })).toBeVisible();
+  await expectPlatformLive(secondPage);
 
   const secondIdentity = secondPage.locator(".identityDetail").first().locator("strong");
   await expect(secondIdentity).not.toHaveText("Joining...");
@@ -201,4 +205,3 @@ test("presence appears and disappears immediately across two browser sessions", 
 
   await firstContext.close();
 });
-

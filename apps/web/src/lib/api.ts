@@ -39,4 +39,3 @@ export function sendPresenceLeave(userId: string, connectionId?: string | null) 
   const body = JSON.stringify({ userId, connectionId });
   navigator.sendBeacon(`${apiBase}/presence/leave`, new Blob([body], { type: "application/json" }));
 }
-

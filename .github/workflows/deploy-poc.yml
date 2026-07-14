@@ -2,17 +2,20 @@ name: deploy-poc
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
+    paths:
+      - "services/**"
+      - "building-blocks/**"
+      - "contracts/**"
+      - "scripts/cloud/**"
+      - "Directory.Build.props"
+      - "Directory.Packages.props"
+      - "RealtimePixPlatform.slnx"
+      - ".github/workflows/deploy-poc.yml"
   workflow_dispatch:
     inputs:
-      apply_runtime:
-        description: "Apply runtime after building images"
-        required: true
-        default: "true"
-        type: choice
-        options: ["true", "false"]
       reset_databases:
-        description: "Drop and recreate service database schemas before migrations"
+        description: "Discard all fictional POC data before applying migrations"
         required: true
         default: "false"
         type: choice
@@ -20,7 +23,7 @@ on:
 
 concurrency:
   group: deploy-poc
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -28,74 +31,109 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy POC
+    name: Build and deploy application
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     environment: poc
     env:
-      VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
       TF_INPUT: "0"
       TF_VAR_tfstate_resource_group_name: ${{ vars.TFSTATE_RESOURCE_GROUP }}
       TF_VAR_tfstate_storage_account_name: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
       TF_VAR_tfstate_container_name: ${{ vars.TFSTATE_CONTAINER }}
-      TF_VAR_publisher_email: ${{ vars.PUBLISHER_EMAIL }}
+      VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v6
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.11.4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
-      - name: Break stale foundation state lease
-        timeout-minutes: 2
-        shell: bash
-        run: |
-          az storage blob lease break \
-            --account-name "${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
-            --container-name "${{ vars.TFSTATE_CONTAINER }}" \
-            --blob-name "foundation-poc.tfstate" \
-            --lease-break-period 0 \
-            --auth-mode login \
-            --only-show-errors \
-            --output none || true
-          sleep 15
-
-      - name: Apply foundation
-        timeout-minutes: 15
-        working-directory: infra/terraform/foundation
-        run: |
-          terraform init \
-            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
-            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
-            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -backend-config="key=foundation-poc.tfstate" \
-            -backend-config="use_azuread_auth=true"
-          AZURE_SUBSCRIPTION_ID="${{ vars.AZURE_SUBSCRIPTION_ID }}" bash ../../../scripts/cloud/import-realtime-servicebus-rule-state.sh
-          terraform apply -auto-approve \
-            -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
-            -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
-            -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -var="publisher_email=${{ vars.PUBLISHER_EMAIL }}"
+      - name: Sign in with image-push identity
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_IMAGE_CLIENT_ID || vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Read foundation outputs
         id: foundation
         working-directory: infra/terraform/foundation
         shell: bash
         run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=poc/foundation.tfstate" \
+            -backend-config="use_azuread_auth=true"
+
           echo "acr_name=$(terraform output -raw acr_name)" >> "$GITHUB_OUTPUT"
           echo "acr_login_server=$(terraform output -raw acr_login_server)" >> "$GITHUB_OUTPUT"
           echo "resource_group_name=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
           echo "postgres_fqdn=$(terraform output -raw postgres_fqdn)" >> "$GITHUB_OUTPUT"
           echo "postgres_server_name=$(terraform output -raw postgres_server_name)" >> "$GITHUB_OUTPUT"
-          echo "postgres_admin_login=$(terraform output -raw postgres_admin_login)" >> "$GITHUB_OUTPUT"
-          echo "key_vault_name=$(terraform output -raw key_vault_name)" >> "$GITHUB_OUTPUT"
+          echo "postgres_entra_admin_name=$(terraform output -raw postgres_entra_admin_name)" >> "$GITHUB_OUTPUT"
           echo "servicebus_namespace_name=$(terraform output -raw servicebus_namespace_name)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push application images
+        shell: bash
+        env:
+          ACR_NAME: ${{ steps.foundation.outputs.acr_name }}
+          ACR_LOGIN_SERVER: ${{ steps.foundation.outputs.acr_login_server }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          az acr login --name "$ACR_NAME"
+
+          build_and_push() {
+            local repository="$1"
+            local dockerfile="$2"
+            local image="$ACR_LOGIN_SERVER/realtime-pix/$repository:$IMAGE_TAG"
+            docker build --file "$dockerfile" --tag "$image" .
+            docker push "$image"
+          }
+
+          build_and_push api-gateway services/api-gateway/Dockerfile
+          build_and_push identity-presence-service services/identity-presence-service/Dockerfile
+          build_and_push bank-ledger-service services/bank-ledger-service/Dockerfile
+          build_and_push transaction-service services/transaction-service/Dockerfile
+          build_and_push realtime-events-service services/realtime-events-service/Dockerfile
+          build_and_push bot-service services/bot-service/Dockerfile
+          # Transitional image only: no traffic, min replicas zero, removed after one release.
+          build_and_push wallet-ledger-service services/wallet-ledger-service/Dockerfile
+
+      - name: Sign out image-push identity
+        shell: bash
+        run: az logout
+
+      - name: Sign in with apply identity
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_APPLY_CLIENT_ID || vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Apply runtime application revision
+        id: runtime
+        working-directory: infra/terraform/runtime
+        shell: bash
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=poc/runtime.tfstate" \
+            -backend-config="use_azuread_auth=true"
+
+          terraform apply -auto-approve \
+            -var="image_tag=${{ github.sha }}"
+
+          echo "workload_identities=$(terraform output -json workload_identities | jq -c .)" >> "$GITHUB_OUTPUT"
+          echo "container_apps=$(terraform output -json active_container_app_names | jq -c .)" >> "$GITHUB_OUTPUT"
+          echo "api_url=$(terraform output -raw apim_api_url)" >> "$GITHUB_OUTPUT"
+          echo "presence_hub_url=$(terraform output -raw presence_hub_url)" >> "$GITHUB_OUTPUT"
+          echo "events_hub_url=$(terraform output -raw events_hub_url)" >> "$GITHUB_OUTPUT"
 
       - name: Install PostgreSQL client
         shell: bash
@@ -107,112 +145,92 @@ jobs:
         id: runner_ip
         shell: bash
         run: |
-          IP="$(curl -sS https://api.ipify.org)"
+          IP="$(curl --fail --silent --show-error https://api.ipify.org)"
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
           az postgres flexible-server firewall-rule create \
             --resource-group "${{ steps.foundation.outputs.resource_group_name }}" \
             --server-name "${{ steps.foundation.outputs.postgres_server_name }}" \
             --name "github-actions-${{ github.run_id }}" \
             --start-ip-address "$IP" \
-            --end-ip-address "$IP"
+            --end-ip-address "$IP" \
+            --only-show-errors \
+            --output none
 
-      - name: Bootstrap PostgreSQL roles, permissions, and connection secrets
+      - name: Configure Microsoft Entra database principals
         shell: bash
         env:
           PGHOST: ${{ steps.foundation.outputs.postgres_fqdn }}
-          PGADMIN_USER: ${{ steps.foundation.outputs.postgres_admin_login }}
-          KEYVAULT_NAME: ${{ steps.foundation.outputs.key_vault_name }}
-        run: bash scripts/cloud/postgres-bootstrap-noninteractive.sh
+          PGADMIN_USER: ${{ steps.foundation.outputs.postgres_entra_admin_name }}
+          WORKLOAD_IDENTITIES_JSON: ${{ steps.runtime.outputs.workload_identities }}
+        run: bash scripts/cloud/postgres-bootstrap-entra.sh
 
-      - name: Reset PostgreSQL schemas
+      - name: Reset disposable POC data
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.reset_databases == 'true' }}
         shell: bash
         env:
           PGHOST: ${{ steps.foundation.outputs.postgres_fqdn }}
-          KEYVAULT_NAME: ${{ steps.foundation.outputs.key_vault_name }}
+          PGADMIN_USER: ${{ steps.foundation.outputs.postgres_entra_admin_name }}
+          WORKLOAD_IDENTITIES_JSON: ${{ steps.runtime.outputs.workload_identities }}
         run: bash scripts/cloud/reset-postgres-schemas.sh
 
-      - name: Apply EF Core migrations
+      - name: Apply five EF Core migration sets
         shell: bash
         env:
-          KEYVAULT_NAME: ${{ steps.foundation.outputs.key_vault_name }}
+          PGHOST: ${{ steps.foundation.outputs.postgres_fqdn }}
+          PGADMIN_USER: ${{ steps.foundation.outputs.postgres_entra_admin_name }}
+          WORKLOAD_IDENTITIES_JSON: ${{ steps.runtime.outputs.workload_identities }}
         run: bash scripts/cloud/run-ef-migrations.sh
 
-      - name: Remove Service Bus default rules
+      - name: Restart active revisions after migrations
+        shell: bash
+        env:
+          RESOURCE_GROUP: ${{ steps.foundation.outputs.resource_group_name }}
+          CONTAINER_APPS_JSON: ${{ steps.runtime.outputs.container_apps }}
+        run: |
+          jq -r '.[]' <<< "$CONTAINER_APPS_JSON" | while read -r app; do
+            revision="$(az containerapp show \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$app" \
+              --query properties.latestRevisionName \
+              --output tsv)"
+            az containerapp revision restart \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$app" \
+              --revision "$revision" \
+              --only-show-errors \
+              --output none
+          done
+
+      - name: Remove Service Bus default authorization rules
         shell: bash
         env:
           RG: ${{ steps.foundation.outputs.resource_group_name }}
           SERVICEBUS_NAMESPACE: ${{ steps.foundation.outputs.servicebus_namespace_name }}
         run: bash scripts/cloud/remove-servicebus-default-rules.sh
 
-      - name: Build service images in ACR
-        shell: bash
-        run: |
-          ACR="${{ steps.foundation.outputs.acr_name }}"
-          ACR_LOGIN_SERVER="${{ steps.foundation.outputs.acr_login_server }}"
-          TAG="${{ github.sha }}"
-          az acr login --name "$ACR"
-
-          docker build --file services/api-gateway/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/api-gateway:$TAG" .
-          docker push "$ACR_LOGIN_SERVER/realtime-pix/api-gateway:$TAG"
-
-          docker build --file services/identity-presence-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/identity-presence-service:$TAG" .
-          docker push "$ACR_LOGIN_SERVER/realtime-pix/identity-presence-service:$TAG"
-
-          docker build --file services/wallet-ledger-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/wallet-ledger-service:$TAG" .
-          docker push "$ACR_LOGIN_SERVER/realtime-pix/wallet-ledger-service:$TAG"
-
-          docker build --file services/transaction-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/transaction-service:$TAG" .
-          docker push "$ACR_LOGIN_SERVER/realtime-pix/transaction-service:$TAG"
-
-          docker build --file services/realtime-events-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/realtime-events-service:$TAG" .
-          docker push "$ACR_LOGIN_SERVER/realtime-pix/realtime-events-service:$TAG"
-
-          docker build --file services/bot-service/Dockerfile --tag "$ACR_LOGIN_SERVER/realtime-pix/bot-service:$TAG" .
-          docker push "$ACR_LOGIN_SERVER/realtime-pix/bot-service:$TAG"
-
-      - name: Apply runtime
-        id: runtime_apply
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.apply_runtime == 'true' }}
-        working-directory: infra/terraform/runtime
-        run: |
-          terraform init \
-            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
-            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
-            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -backend-config="key=runtime-poc.tfstate" \
-            -backend-config="use_azuread_auth=true"
-          terraform apply -auto-approve \
-            -var="tfstate_resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
-            -var="tfstate_storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
-            -var="tfstate_container_name=${{ vars.TFSTATE_CONTAINER }}" \
-            -var="image_tag=${{ github.sha }}"
-
-      - name: Sync Vercel frontend environment
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.apply_runtime == 'true') && env.VERCEL_API_TOKEN != '' }}
-        working-directory: infra/terraform/runtime
+      - name: Run cloud Saga smoke tests
+        id: smoke
         shell: bash
         env:
+          API_BASE_URL: ${{ steps.runtime.outputs.api_url }}
+        run: node scripts/cloud/smoke-e2e.mjs
+
+      - name: Synchronize Vercel public environment
+        if: ${{ env.VERCEL_API_TOKEN != '' }}
+        working-directory: apps/web
+        shell: bash
+        env:
+          API_URL: ${{ steps.runtime.outputs.api_url }}
+          PRESENCE_HUB_URL: ${{ steps.runtime.outputs.presence_hub_url }}
+          EVENTS_HUB_URL: ${{ steps.runtime.outputs.events_hub_url }}
           VERCEL_PROJECT_NAME: realtime-pix-web
         run: |
-          API_URL="$(terraform output -raw apim_api_url)"
-          PRESENCE_HUB_URL="$(terraform output -raw presence_hub_url)"
-          EVENTS_HUB_URL="$(terraform output -raw events_hub_url)"
-
-          cd ../../../apps/web
           npx vercel link --yes --project "$VERCEL_PROJECT_NAME" --token "$VERCEL_API_TOKEN"
 
           sync_env() {
-            local key="$1"
-            local value="$2"
-            local target="$3"
-
+            local key="$1" value="$2" target="$3"
             npx vercel env rm "$key" "$target" --yes --token "$VERCEL_API_TOKEN" >/dev/null 2>&1 || true
-            if [[ "$target" == "preview" ]]; then
-              printf "%s\n" "$value" | npx vercel env add "$key" "$target" "" --token "$VERCEL_API_TOKEN"
-            else
-              printf "%s\n" "$value" | npx vercel env add "$key" "$target" --token "$VERCEL_API_TOKEN"
-            fi
+            printf '%s\n' "$value" | npx vercel env add "$key" "$target" --token "$VERCEL_API_TOKEN"
           }
 
           for target in production preview; do
@@ -221,66 +239,19 @@ jobs:
             sync_env NEXT_PUBLIC_EVENTS_HUB_URL "$EVENTS_HUB_URL" "$target"
           done
 
-      - name: Smoke test
-        id: smoke_test
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.apply_runtime == 'true' }}
-        working-directory: infra/terraform/runtime
-        shell: bash
-        run: |
-          API_URL="$(terraform output -raw apim_api_url)"
-          echo "Running cloud smoke tests against ${API_URL}"
-          API_BASE_URL="$API_URL" node ../../../scripts/cloud/smoke-e2e.mjs
-
       - name: Dump Container Apps diagnostics
-        if: ${{ failure() && (github.event_name != 'workflow_dispatch' || inputs.apply_runtime == 'true') && (steps.runtime_apply.outcome == 'failure' || steps.smoke_test.outcome == 'failure') }}
+        if: failure() && steps.runtime.outcome != 'skipped'
         shell: bash
+        env:
+          RESOURCE_GROUP: ${{ steps.foundation.outputs.resource_group_name }}
         run: |
-          RG="${{ steps.foundation.outputs.resource_group_name }}"
-
-          echo "::group::Container Apps"
           az containerapp list \
-            --resource-group "$RG" \
-            --query "[].{name:name, provisioningState:properties.provisioningState, runningStatus:properties.runningStatus, fqdn:properties.configuration.ingress.fqdn, latestRevision:properties.latestRevisionName}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "[].{name:name,state:properties.provisioningState,status:properties.runningStatus,revision:properties.latestRevisionName}" \
             --output table || true
-          echo "::endgroup::"
-
-          for app in $(az containerapp list --resource-group "$RG" --query "[].name" --output tsv); do
-            echo "::group::${app} revisions"
-            az containerapp revision list \
-              --resource-group "$RG" \
-              --name "$app" \
-              --query "[].{name:name, active:properties.active, trafficWeight:properties.trafficWeight, healthState:properties.healthState, provisioningState:properties.provisioningState, createdTime:properties.createdTime}" \
-              --output table || true
-            echo "::endgroup::"
-
+          for app in $(az containerapp list --resource-group "$RESOURCE_GROUP" --query "[].name" --output tsv); do
             echo "::group::${app} logs"
-            az containerapp logs show \
-              --resource-group "$RG" \
-              --name "$app" \
-              --tail 120 \
-              --format text \
-              --follow false || true
-            echo "::endgroup::"
-          done
-
-          echo "::group::Service Bus subscriptions"
-          az servicebus topic subscription list \
-            --resource-group "$RG" \
-            --namespace-name "${{ steps.foundation.outputs.servicebus_namespace_name }}" \
-            --topic-name platform-events \
-            --query "[].{name:name,status:status,countMessage:countMessage,activeMessageCount:activeMessageCount,deadLetterMessageCount:deadLetterMessageCount}" \
-            --output table || true
-          echo "::endgroup::"
-
-          for subscription in wallet-ledger transaction realtime-events realtime-events-v2; do
-            echo "::group::Service Bus rules for ${subscription}"
-            az servicebus topic subscription rule list \
-              --resource-group "$RG" \
-              --namespace-name "${{ steps.foundation.outputs.servicebus_namespace_name }}" \
-              --topic-name platform-events \
-              --subscription-name "$subscription" \
-              --query "[].{name:name,filterType:filterType,sqlFilter:sqlFilter.sqlExpression}" \
-              --output table || true
+            az containerapp logs show --resource-group "$RESOURCE_GROUP" --name "$app" --tail 120 --format text --follow false || true
             echo "::endgroup::"
           done
 
@@ -292,4 +263,6 @@ jobs:
             --resource-group "${{ steps.foundation.outputs.resource_group_name }}" \
             --server-name "${{ steps.foundation.outputs.postgres_server_name }}" \
             --name "github-actions-${{ github.run_id }}" \
-            --yes
+            --yes \
+            --only-show-errors \
+            --output none

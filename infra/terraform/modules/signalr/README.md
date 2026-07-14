@@ -1,0 +1,3 @@
+# Azure SignalR module
+
+Creates Azure SignalR in Default mode with managed-identity authentication, diagnostics enabled, and a caller-supplied browser-origin policy. Azure SignalR supports exact origins or `*`, not partial host wildcards. The POC uses `*` only at this managed transport layer so dynamic Vercel preview URLs work; the application negotiate endpoints still enforce the anchored project allowlist. The production profile supplies exact origins. Private endpoints and request-type ACLs are composed by the production networking root because they depend on environment-level subnet and DNS resources.

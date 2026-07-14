@@ -1073,6 +1073,52 @@ p {
   gap: 5px;
 }
 
+.sagaModeControl {
+  border: 0;
+  grid-column: 1 / -1;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.sagaModeControl legend {
+  color: var(--muted);
+  font-size: 0.69rem;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.sagaModeControl > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.sagaModeControl button {
+  background: #f9faf9;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--muted);
+  min-height: 36px;
+  padding: 5px 8px;
+}
+
+.sagaModeControl button:first-child {
+  border-radius: 5px 0 0 5px;
+}
+
+.sagaModeControl button:last-child {
+  border-radius: 0 5px 5px 0;
+}
+
+.sagaModeControl button + button {
+  border-left: 0;
+}
+
+.sagaModeControl button.selected {
+  background: var(--green);
+  color: #fff;
+}
+
 .expertSendButton {
   background: var(--green);
   color: #fff;

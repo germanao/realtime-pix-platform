@@ -31,12 +31,6 @@ variable "tfstate_container_name" {
   type        = string
 }
 
-variable "postgres_admin_login" {
-  description = "PostgreSQL administrator login."
-  type        = string
-  default     = "pixadmin"
-}
-
 variable "publisher_name" {
   description = "APIM publisher name."
   type        = string
@@ -49,9 +43,17 @@ variable "publisher_email" {
 }
 
 variable "allowed_cors_origins" {
-  description = "Browser origins allowed by Azure SignalR and APIM."
+  description = "Origins accepted by the POC Azure SignalR transport. Application endpoints enforce the narrower project allowlist."
   type        = list(string)
-  default     = ["http://localhost:3000", "https://realtime-pix-web.vercel.app", "https://realtime-pix-web*.vercel.app"]
+  default     = ["*"]
+
+  validation {
+    condition = alltrue([
+      for origin in var.allowed_cors_origins :
+      origin == "*" || (!strcontains(origin, "*") && (origin == "http://localhost:3000" || startswith(origin, "https://")))
+    ])
+    error_message = "SignalR origins must be exact origins or the explicit POC transport wildcard; partial wildcards are unsupported."
+  }
 }
 
 variable "tags" {

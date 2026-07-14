@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using RealtimePix.Contracts;
@@ -125,7 +126,13 @@ public sealed class FileEventBusWorkerTests
 
     private static FileEventBusWorker CreateWorker(IOptions<FileEventBusOptions> options, IIntegrationEventHandler handler)
     {
-        return new FileEventBusWorker(options, [handler], new SilentLogger<FileEventBusWorker>());
+        var services = new ServiceCollection();
+        services.AddSingleton(handler);
+        var serviceProvider = services.BuildServiceProvider();
+        return new FileEventBusWorker(
+            options,
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new SilentLogger<FileEventBusWorker>());
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

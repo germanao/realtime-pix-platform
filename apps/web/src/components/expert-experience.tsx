@@ -194,11 +194,19 @@ export function ExpertExperience({ platform }: { platform: RealtimePixPlatform }
               </select>
             </label>
             <label>
-              Recipient account ID
-              <input
+              Recipient account
+              <select
+                disabled={!platform.recipientAccounts.length}
                 onChange={(event) => platform.setSelectedRecipientAccountId(event.target.value)}
                 value={platform.selectedRecipientAccountId}
-              />
+              >
+                {!platform.recipientAccounts.length && <option value="">Select a recipient first</option>}
+                {platform.recipientAccounts.map((account) => (
+                  <option key={account.accountId} value={account.accountId}>
+                    {account.bankName} - {account.accountId}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Amount
@@ -208,6 +216,26 @@ export function ExpertExperience({ platform }: { platform: RealtimePixPlatform }
                 value={platform.amount}
               />
             </label>
+            <fieldset className="sagaModeControl">
+              <legend>Saga outcome</legend>
+              <div role="group" aria-label="Saga outcome simulation">
+                {([
+                  ["normal", "Normal"],
+                  ["credit_rejected", "Reject credit"],
+                  ["credit_timeout", "Credit timeout"]
+                ] as const).map(([value, label]) => (
+                  <button
+                    aria-pressed={platform.simulationMode === value}
+                    className={platform.simulationMode === value ? "selected" : ""}
+                    key={value}
+                    onClick={() => platform.setSimulationMode(value)}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
           </div>
           <button
             className="expertSendButton"

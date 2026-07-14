@@ -11,7 +11,17 @@
     "PixCreditSucceeded.v1",
     "PixTransferCompleted.v1",
     "PixTransferFailed.v1",
-    "ArchitectureFlowStepRecorded.v1"
+    "ArchitectureFlowStepRecorded.v1",
+    "FundsDebited.v1",
+    "FundsDebitRejected.v1",
+    "FundsCredited.v1",
+    "FundsCreditRejected.v1",
+    "FundsRefunded.v1",
+    "FundsRefundRejected.v1",
+    "PixTransferCompleted.v2",
+    "PixTransferFailed.v2",
+    "PixTransferCompensated.v1",
+    "PixSagaTimedOut.v1",
+    "SagaTransitionRecorded.v1"
   ]
 }
-

@@ -1,6 +1,7 @@
 name: ci
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
@@ -12,17 +13,32 @@ jobs:
   backend:
     name: Backend build and tests
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
       - name: Restore
         run: dotnet restore RealtimePixPlatform.slnx
+      - name: Format check
+        run: dotnet format RealtimePixPlatform.slnx --verify-no-changes --no-restore --severity warn
       - name: Build
         run: dotnet build RealtimePixPlatform.slnx --configuration Release --no-restore
-      - name: Test
+      - name: Unit and architecture tests
         run: dotnet test RealtimePixPlatform.slnx --configuration Release --no-build --logger trx -m:1
+      - name: PostgreSQL and Service Bus integration tests
+        run: dotnet test tests/RealtimePix.IntegrationTests/RealtimePix.IntegrationTests.csproj --configuration Release --no-build --logger trx -m:1
+        env:
+          RUN_INTEGRATION_TESTS: "true"
+      - name: Audit NuGet dependencies
+        shell: bash
+        run: |
+          report="$(dotnet list RealtimePixPlatform.slnx package --vulnerable --include-transitive)"
+          printf '%s\n' "$report"
+          if grep -qE '^\s*>\s' <<< "$report"; then
+            exit 1
+          fi
 
   frontend:
     name: Frontend build and tests
@@ -31,8 +47,8 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -45,8 +61,8 @@ jobs:
     name: Terraform format and validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v6
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.11.4
       - name: Format check
@@ -66,35 +82,56 @@ jobs:
         run: |
           terraform init -backend=false
           terraform validate
+      - name: Validate production reference
+        working-directory: infra/terraform/production-reference
+        run: |
+          terraform init -backend=false
+          terraform validate
+      - name: Terraform native tests
+        working-directory: infra/terraform/foundation
+        run: terraform test
+      - name: Production reference native tests
+        working-directory: infra/terraform/production-reference
+        run: terraform test
 
   dockerfiles:
-    name: Dockerfile checks
+    name: Build service images
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api-gateway
+            dockerfile: services/api-gateway/Dockerfile
+          - name: identity-presence
+            dockerfile: services/identity-presence-service/Dockerfile
+          - name: bank-ledger
+            dockerfile: services/bank-ledger-service/Dockerfile
+          - name: transaction
+            dockerfile: services/transaction-service/Dockerfile
+          - name: realtime-events
+            dockerfile: services/realtime-events-service/Dockerfile
+          - name: bot
+            dockerfile: services/bot-service/Dockerfile
+          - name: legacy-wallet-transition
+            dockerfile: services/wallet-ledger-service/Dockerfile
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify expected service Dockerfiles
-        shell: bash
-        run: |
-          for file in \
-            services/api-gateway/Dockerfile \
-            services/identity-presence-service/Dockerfile \
-            services/wallet-ledger-service/Dockerfile \
-            services/transaction-service/Dockerfile \
-            services/realtime-events-service/Dockerfile \
-            services/bot-service/Dockerfile
-          do
-            test -f "$file"
-          done
+      - uses: actions/checkout@v6
+      - name: Build ${{ matrix.name }}
+        run: docker build --file "${{ matrix.dockerfile }}" --tag "realtime-pix/${{ matrix.name }}:${{ github.sha }}" .
 
   public-repo-hygiene:
     name: Public repository hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Block generated runtime artifacts
         shell: bash
         run: |
-          tracked="$(git ls-files | grep -E '(^|/)(work/local-bus|test-results|playwright-report|outputs/|\.env|terraform\.tfstate|\.tfvars|\.terraform/)' || true)"
+          tracked="$(git ls-files \
+            | grep -E '(^|/)(work/local-bus|test-results|playwright-report|outputs/|\.env|terraform\.tfstate|\.tfvars|\.terraform/)' \
+            | grep -v -E '^infra/terraform/environments/(poc/(foundation|runtime)|production/production)\.tfvars$' \
+            || true)"
           if [ -n "$tracked" ]; then
             echo "Generated or sensitive local files are tracked:"
             echo "$tracked"
@@ -110,4 +147,3 @@ jobs:
             echo "$matches"
             exit 1
           fi
-

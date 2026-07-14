@@ -1,0 +1,141 @@
+name: infrastructure-apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type plan-poc or apply-poc to match the selected operation"
+        required: true
+      operation:
+        description: "Terraform operation"
+        required: true
+        default: plan
+        type: choice
+        options: [plan, apply]
+      stack:
+        description: "Terraform stack to plan or apply"
+        required: true
+        default: foundation
+        type: choice
+        options: [bootstrap, foundation, runtime, all]
+      image_tag:
+        description: "Existing ACR image tag (required for runtime/all)"
+        required: false
+
+concurrency:
+  group: terraform-poc-apply
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+  id-token: write
+
+jobs:
+  apply:
+    name: Approved infrastructure plan or apply
+    if: >-
+      (inputs.operation == 'plan' && inputs.confirmation == 'plan-poc') ||
+      (inputs.operation == 'apply' && inputs.confirmation == 'apply-poc')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: poc
+    env:
+      TF_INPUT: "0"
+      TF_VAR_tfstate_resource_group_name: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+      TF_VAR_tfstate_storage_account_name: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+      TF_VAR_tfstate_container_name: ${{ vars.TFSTATE_CONTAINER }}
+      TF_VAR_publisher_email: ${{ vars.PUBLISHER_EMAIL }}
+      TF_VAR_budget_contact_emails: ${{ format('["{0}"]', vars.PUBLISHER_EMAIL) }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_APPLY_CLIENT_ID || vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.11.4
+
+      - name: Validate runtime image tag
+        if: inputs.stack == 'runtime' || inputs.stack == 'all'
+        shell: bash
+        run: |
+          if [[ -z "${{ inputs.image_tag }}" ]]; then
+            echo "image_tag is required when applying runtime or all." >&2
+            exit 1
+          fi
+
+      - name: Plan or apply bootstrap
+        if: inputs.stack == 'bootstrap'
+        working-directory: infra/terraform/bootstrap
+        shell: bash
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=bootstrap.tfstate" \
+            -backend-config="use_azuread_auth=true"
+
+          if [[ "${{ inputs.operation }}" == "plan" ]]; then
+            terraform plan
+          else
+            terraform apply -auto-approve
+          fi
+
+      - name: Synchronize bootstrap GitHub variables
+        if: inputs.stack == 'bootstrap' && inputs.operation == 'apply'
+        working-directory: infra/terraform/bootstrap
+        shell: bash
+        run: |
+          apply_client_id="$(terraform output -raw github_apply_client_id)"
+          plan_client_id="$(terraform output -raw github_plan_client_id)"
+          image_client_id="$(terraform output -raw github_image_push_client_id)"
+
+          gh variable set AZURE_APPLY_CLIENT_ID --repo "$GITHUB_REPOSITORY" --env poc --body "$apply_client_id"
+          gh variable set AZURE_IMAGE_CLIENT_ID --repo "$GITHUB_REPOSITORY" --env poc --body "$image_client_id"
+
+          gh variable set AZURE_PLAN_CLIENT_ID --repo "$GITHUB_REPOSITORY" --body "$plan_client_id"
+          gh variable set AZURE_TENANT_ID --repo "$GITHUB_REPOSITORY" --body "${{ vars.AZURE_TENANT_ID }}"
+          gh variable set AZURE_SUBSCRIPTION_ID --repo "$GITHUB_REPOSITORY" --body "${{ vars.AZURE_SUBSCRIPTION_ID }}"
+          gh variable set TFSTATE_RESOURCE_GROUP --repo "$GITHUB_REPOSITORY" --body "${{ vars.TFSTATE_RESOURCE_GROUP }}"
+          gh variable set TFSTATE_STORAGE_ACCOUNT --repo "$GITHUB_REPOSITORY" --body "${{ vars.TFSTATE_STORAGE_ACCOUNT }}"
+          gh variable set TFSTATE_CONTAINER --repo "$GITHUB_REPOSITORY" --body "${{ vars.TFSTATE_CONTAINER }}"
+          gh variable set PUBLISHER_EMAIL --repo "$GITHUB_REPOSITORY" --body "${{ vars.PUBLISHER_EMAIL }}"
+
+      - name: Plan or apply foundation
+        if: inputs.stack == 'foundation' || inputs.stack == 'all'
+        working-directory: infra/terraform/foundation
+        shell: bash
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=poc/foundation.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          if [[ "${{ inputs.operation }}" == "plan" ]]; then
+            terraform plan
+          else
+            terraform apply -auto-approve
+          fi
+
+      - name: Plan or apply runtime infrastructure
+        if: inputs.stack == 'runtime' || inputs.stack == 'all'
+        working-directory: infra/terraform/runtime
+        shell: bash
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=poc/runtime.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          if [[ "${{ inputs.operation }}" == "plan" ]]; then
+            terraform plan -var="image_tag=${{ inputs.image_tag }}"
+          else
+            terraform apply -auto-approve -var="image_tag=${{ inputs.image_tag }}"
+          fi

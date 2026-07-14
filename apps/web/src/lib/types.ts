@@ -17,6 +17,7 @@ export type PresenceUser = {
 export type Account = {
   accountId: string;
   userId: string;
+  bankId: "bank-a" | "bank-b" | string;
   bankName: string;
   balance: number;
 };
@@ -45,14 +46,28 @@ export type Transfer = {
   idempotencyKey: string;
   senderUserId: string;
   senderAccountId: string;
+  senderBankId?: string;
   recipientUserId: string;
   recipientAccountId: string;
+  recipientBankId?: string;
   amount: number;
   status: string;
+  sagaState?: string;
+  currentStep?: string;
+  compensationState?: string;
+  failureCode?: string | null;
   failureReason?: string | null;
+  version?: number;
+  simulationMode?: "normal" | "credit_rejected" | "credit_timeout" | string;
   createdAt: string;
   updatedAt: string;
+  deadlineAt?: string;
+  completedAt?: string | null;
+  compensationStartedAt?: string | null;
+  compensatedAt?: string | null;
 };
+
+export type SagaSimulationMode = "normal" | "credit_rejected" | "credit_timeout";
 
 export type EventPayload = Record<string, unknown>;
 

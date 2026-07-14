@@ -24,6 +24,8 @@ infra/data/
 *.tfplan
 *.tfvars
 *.tfvars.json
+!infra/terraform/environments/
+!infra/terraform/environments/**/*.tfvars
 *.user
 *.suo
 *.log

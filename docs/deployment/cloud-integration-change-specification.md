@@ -1,5 +1,7 @@
 # Cloud Integration Change Specification
 
+> Historical design specification. The implemented platform now uses Azure Service Bus, five active databases, dual bank ledgers, and an orchestrated Saga; see [the architecture guide](../architecture/README.md).
+
 This document defines the code and repository changes required to make the
 Real-Time PIX Event Platform function correctly across Azure Container Apps,
 Azure Event Grid, Azure SignalR Service, Neon PostgreSQL, GHCR, and Vercel.

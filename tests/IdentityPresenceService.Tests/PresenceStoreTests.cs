@@ -1,14 +1,16 @@
+using IdentityPresence.Domain;
+using IdentityPresence.Infrastructure;
 using RealtimePix.Contracts;
 using Xunit;
 
 public sealed class PresenceStoreTests
 {
     [Fact]
-    public void Connecting_anonymous_user_emits_online_presence_snapshot()
+    public async Task Connecting_anonymous_user_emits_online_presence_snapshot()
     {
-        var store = new global::PresenceStore();
+        var store = new InMemoryPresenceStore();
 
-        var result = store.ConnectAnonymous("client-a", "connection-a");
+        var result = await store.ConnectAnonymousAsync("client-a", "connection-a", CancellationToken.None);
 
         Assert.True(result.BecameOnline);
         Assert.Contains(result.ActiveUsers, user => user.UserId == result.Session.UserId && user.IsOnline);
@@ -16,22 +18,22 @@ public sealed class PresenceStoreTests
     }
 
     [Fact]
-    public void Multiple_connections_keep_user_online_until_last_disconnects()
+    public async Task Multiple_connections_keep_user_online_until_last_disconnects()
     {
-        var store = new global::PresenceStore();
+        var store = new InMemoryPresenceStore();
 
-        var first = store.ConnectAnonymous("client-a", "connection-a");
-        var second = store.ConnectAnonymous("client-a", "connection-b");
+        var first = await store.ConnectAnonymousAsync("client-a", "connection-a", CancellationToken.None);
+        var second = await store.ConnectAnonymousAsync("client-a", "connection-b", CancellationToken.None);
 
         Assert.False(second.BecameOnline);
 
-        var afterFirstLeave = store.Leave(first.Session.UserId, "connection-a");
+        var afterFirstLeave = await store.LeaveAsync(first.Session.UserId, "connection-a", CancellationToken.None);
 
         Assert.NotNull(afterFirstLeave);
         Assert.False(afterFirstLeave.BecameOffline);
         Assert.Contains(afterFirstLeave.ActiveUsers, user => user.UserId == first.Session.UserId);
 
-        var afterLastDisconnect = store.Disconnect("connection-b");
+        var afterLastDisconnect = await store.DisconnectAsync("connection-b", CancellationToken.None);
 
         Assert.NotNull(afterLastDisconnect);
         Assert.True(afterLastDisconnect.BecameOffline);
@@ -39,14 +41,14 @@ public sealed class PresenceStoreTests
     }
 
     [Fact]
-    public void Bots_remain_online_after_human_user_disconnects()
+    public async Task Bots_remain_online_after_human_user_disconnects()
     {
-        var store = new global::PresenceStore();
-        var result = store.ConnectAnonymous("client-a", "connection-a");
+        var store = new InMemoryPresenceStore();
+        var result = await store.ConnectAnonymousAsync("client-a", "connection-a", CancellationToken.None);
 
-        store.Leave(result.Session.UserId, "connection-a");
+        await store.LeaveAsync(result.Session.UserId, "connection-a", CancellationToken.None);
 
-        var activeUsers = store.GetActiveUsers();
+        var activeUsers = await store.GetActiveUsersAsync(CancellationToken.None);
         Assert.DoesNotContain(activeUsers, user => user.UserId == result.Session.UserId);
         Assert.Contains(activeUsers, user => user.IsBot && user.IsOnline);
     }
@@ -73,8 +75,8 @@ public sealed class PresenceStoreTests
     [Fact]
     public void Anonymous_name_is_stable_and_uses_an_athlete_prefix()
     {
-        var first = PresenceStore.CreateDisplayName("stable-client");
-        var second = PresenceStore.CreateDisplayName("stable-client");
+        var first = AnonymousDisplayNames.Create("stable-client");
+        var second = AnonymousDisplayNames.Create("stable-client");
 
         Assert.Equal(first, second);
         Assert.Contains(
@@ -85,4 +87,3 @@ public sealed class PresenceStoreTests
             suffix => first.EndsWith($" {suffix}", StringComparison.Ordinal));
     }
 }
-
