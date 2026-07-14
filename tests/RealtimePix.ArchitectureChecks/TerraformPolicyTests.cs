@@ -74,6 +74,20 @@ public sealed class TerraformPolicyTests
     }
 
     [Fact]
+    public void Key_vault_firewalls_default_to_deny()
+    {
+        var foundation = Read("infra", "terraform", "foundation", "main.tf");
+        var production = Read("infra", "terraform", "production-reference", "main.tf");
+
+        Assert.Matches(
+            @"network_acls\s*\{\s*bypass\s*=\s*""AzureServices""\s*default_action\s*=\s*""Deny""",
+            foundation);
+        Assert.Matches(
+            @"network_acls\s*\{\s*bypass\s*=\s*""None""\s*default_action\s*=\s*""Deny""",
+            production);
+    }
+
+    [Fact]
     public void Service_bus_filters_never_use_a_default_true_filter()
     {
         var foundation = Read("infra", "terraform", "foundation", "main.tf");
