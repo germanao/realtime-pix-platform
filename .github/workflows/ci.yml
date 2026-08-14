@@ -36,7 +36,14 @@ jobs:
         run: |
           report="$(dotnet list RealtimePixPlatform.slnx package --vulnerable --include-transitive)"
           printf '%s\n' "$report"
-          if grep -qE '^\s*>\s' <<< "$report"; then
+          vulnerable_rows="$(grep -E '^\s*>\s' <<< "$report" || true)"
+          unexpected_rows="$(grep -vE '^\s*>\s+SSH\.NET\s+2025\.1\.0\s+High\s+https://github\.com/advisories/GHSA-q939-rpr3-3284\s*$' <<< "$vulnerable_rows" || true)"
+          if [[ -n "$unexpected_rows" ]]; then
+            printf 'Unexpected vulnerable package rows:\n%s\n' "$unexpected_rows" >&2
+            exit 1
+          fi
+          if [[ -n "$vulnerable_rows" ]] && ! grep -q 'NuGetAuditSuppress Include="https://github.com/advisories/GHSA-q939-rpr3-3284"' tests/RealtimePix.IntegrationTests/RealtimePix.IntegrationTests.csproj; then
+            echo 'The test-only SSH.NET exception must remain explicitly scoped in the integration-test project.' >&2
             exit 1
           fi
 

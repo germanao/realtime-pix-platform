@@ -1,6 +1,6 @@
 # Foundation Terraform
 
-This stack creates long-lived POC services: ACR Basic, one Entra-enabled PostgreSQL server, Service Bus Standard, SignalR Free, App Configuration, Key Vault, observability, Container Apps environment, APIM Consumption, and Notification Hubs Free.
+This stack creates only the long-lived services used by the POC: one Entra-enabled PostgreSQL server, Service Bus Standard, SignalR Free, App Configuration Free, capped observability, a Container Apps Consumption environment, and APIM Consumption. Public application images live in GitHub Container Registry, so the POC does not provision ACR. Unused Key Vault and Notification Hubs resources are intentionally omitted.
 
 Five databases are active (`identity_presence_db`, both bank ledger databases, `transaction_db`, and `realtime_projection_db`). `wallet_ledger_db` and its `1 = 0` subscription are retained trafficless for one rollback release.
 

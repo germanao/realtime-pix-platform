@@ -42,8 +42,12 @@ output "workload_identities" {
 output "active_container_app_names" {
   value = concat(
     [for app in module.internal_apps : app.name],
-    [module.api_gateway.name, module.bot.name]
+    [module.api_gateway.name]
   )
+}
+
+output "bot_job_name" {
+  value = azurerm_container_app_job.bot.name
 }
 
 output "deployed_image_tag" {

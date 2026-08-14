@@ -5,7 +5,7 @@ LOCATION="${LOCATION:-brazilsouth}"
 
 az account show --output table
 
-for provider in Microsoft.App Microsoft.ContainerRegistry Microsoft.DBforPostgreSQL Microsoft.ServiceBus Microsoft.SignalRService Microsoft.KeyVault Microsoft.AppConfiguration Microsoft.ApiManagement Microsoft.NotificationHubs Microsoft.Insights; do
+for provider in Microsoft.App Microsoft.DBforPostgreSQL Microsoft.ServiceBus Microsoft.SignalRService Microsoft.AppConfiguration Microsoft.ApiManagement Microsoft.Insights; do
   state="$(az provider show --namespace "${provider}" --query registrationState -o tsv 2>/dev/null || true)"
   echo "${provider}: ${state:-not registered}"
 done

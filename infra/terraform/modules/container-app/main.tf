@@ -11,9 +11,12 @@ resource "azurerm_container_app" "this" {
     identity_ids = [var.identity_id]
   }
 
-  registry {
-    server   = var.registry.server
-    identity = var.identity_id
+  dynamic "registry" {
+    for_each = var.registry == null ? [] : [var.registry]
+    content {
+      server   = registry.value.server
+      identity = var.identity_id
+    }
   }
 
   dynamic "secret" {
@@ -53,6 +56,24 @@ resource "azurerm_container_app" "this" {
   template {
     min_replicas = var.scale.min_replicas
     max_replicas = var.scale.max_replicas
+
+    dynamic "custom_scale_rule" {
+      for_each = var.custom_scale_rules
+      content {
+        name             = custom_scale_rule.key
+        custom_rule_type = custom_scale_rule.value.custom_rule_type
+        metadata         = custom_scale_rule.value.metadata
+        identity_id      = custom_scale_rule.value.identity_id
+      }
+    }
+
+    dynamic "http_scale_rule" {
+      for_each = var.ingress == null ? [] : [var.http_concurrent_requests]
+      content {
+        name                = "http"
+        concurrent_requests = http_scale_rule.value
+      }
+    }
 
     container {
       name   = var.container_name

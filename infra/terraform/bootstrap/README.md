@@ -31,4 +31,4 @@ rm -f bootstrap.tfplan
 
 Do not commit or upload the binary plan. Set the resulting non-secret GitHub variables with `scripts/cloud/bootstrap-github-variables.sh`.
 
-Bootstrap creates distinct GitHub OIDC identities for read-only plans, ACR image pushes, and approved foundation/runtime applies. Those identities are scoped to the state data plane and application resource group; they do not manage the state resource group, subscription budget, or bootstrap identity definitions.
+Bootstrap creates distinct GitHub OIDC identities for read-only plans and approved foundation/runtime applies. GitHub Actions publishes public images to GHCR with its short-lived `GITHUB_TOKEN`, so Azure does not need a registry or image-push identity. The Azure identities are scoped to the state data plane and application resource group; they do not manage the state resource group, subscription budget, or bootstrap identity definitions.

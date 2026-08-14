@@ -6,6 +6,7 @@ resource "azurerm_log_analytics_workspace" "this" {
   location            = var.location
   sku                 = "PerGB2018"
   retention_in_days   = var.retention_days
+  daily_quota_gb      = var.daily_quota_gb
   tags                = var.tags
 }
 
@@ -96,7 +97,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "outbox_failures" {
   scopes               = [azurerm_log_analytics_workspace.this.id]
   description          = "Outbox dispatcher failures were detected in application logs."
   severity             = 2
-  enabled              = true
+  enabled              = var.log_alerts_enabled
   evaluation_frequency = "PT5M"
   window_duration      = "PT15M"
   tags                 = var.tags
@@ -120,7 +121,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "api_failures" {
   scopes               = [azurerm_log_analytics_workspace.this.id]
   description          = "HTTP API failures were detected in Application Insights request telemetry."
   severity             = 2
-  enabled              = true
+  enabled              = var.log_alerts_enabled
   evaluation_frequency = "PT5M"
   window_duration      = "PT15M"
   tags                 = var.tags

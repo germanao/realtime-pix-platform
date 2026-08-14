@@ -31,10 +31,12 @@ variable "identity_id" {
 }
 
 variable "registry" {
-  description = "Private registry settings."
+  description = "Optional private registry settings. Public images do not require a registry block."
   type = object({
     server = string
   })
+  default  = null
+  nullable = true
 }
 
 variable "image" {
@@ -90,6 +92,22 @@ variable "scale" {
     min_replicas = number
     max_replicas = number
   })
+}
+
+variable "custom_scale_rules" {
+  description = "KEDA custom scale rules keyed by a stable Terraform name."
+  type = map(object({
+    custom_rule_type = string
+    metadata         = map(string)
+    identity_id      = optional(string)
+  }))
+  default = {}
+}
+
+variable "http_concurrent_requests" {
+  description = "Concurrent requests per replica for the explicit HTTP wake-up rule."
+  type        = number
+  default     = 10
 }
 
 variable "resources" {

@@ -87,10 +87,21 @@ run "container_app_identity_and_replica_contract" {
     container_app_environment_id = "/subscriptions/test/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/test"
     resource_group_name          = "rg-test"
     identity_id                  = "/subscriptions/test/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/transaction"
-    registry                     = { server = "example.azurecr.io" }
-    image                        = "example.azurecr.io/transaction-service:immutable-sha"
-    scale                        = { min_replicas = 1, max_replicas = 2 }
-    ingress                      = { external_enabled = false, target_port = 8080 }
+    image                        = "ghcr.io/example/realtime-pix-transaction-service:immutable-sha"
+    scale                        = { min_replicas = 0, max_replicas = 1 }
+    custom_scale_rules = {
+      servicebus = {
+        custom_rule_type = "azure-servicebus"
+        identity_id      = "/subscriptions/test/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/transaction"
+        metadata = {
+          namespace        = "sb-test"
+          topicName        = "platform-events"
+          subscriptionName = "transaction"
+          messageCount     = "1"
+        }
+      }
+    }
+    ingress = { external_enabled = false, target_port = 8080 }
   }
 
   assert {
@@ -98,8 +109,20 @@ run "container_app_identity_and_replica_contract" {
     error_message = "Every workload must use a dedicated user-assigned identity."
   }
   assert {
-    condition     = azurerm_container_app.this.template[0].min_replicas == 1
-    error_message = "Showcase services must keep one warm replica."
+    condition     = azurerm_container_app.this.template[0].min_replicas == 0
+    error_message = "Free-tier services must be able to scale to zero."
+  }
+  assert {
+    condition     = length(azurerm_container_app.this.template[0].custom_scale_rule) == 1
+    error_message = "Message consumers need a KEDA rule so they can wake from zero replicas."
+  }
+  assert {
+    condition     = length(azurerm_container_app.this.template[0].http_scale_rule) == 1
+    error_message = "Ingress services need an explicit HTTP rule so requests wake zero replicas."
+  }
+  assert {
+    condition     = length(azurerm_container_app.this.registry) == 0
+    error_message = "Public GHCR images must not configure private-registry credentials."
   }
   assert {
     condition     = azurerm_container_app.this.ingress[0].external_enabled == false

@@ -14,8 +14,7 @@ locals {
   resource_group_name = data.terraform_remote_state.foundation.outputs.resource_group_name
   location            = data.terraform_remote_state.foundation.outputs.location
   suffix              = data.terraform_remote_state.foundation.outputs.suffix
-  acr_login_server    = data.terraform_remote_state.foundation.outputs.acr_login_server
-  image_prefix        = "${local.acr_login_server}/realtime-pix"
+  image_prefix        = var.image_repository_prefix
   common_tags = merge(var.tags, {
     suffix      = local.suffix
     environment = var.environment_name
@@ -56,10 +55,6 @@ locals {
   }, local.cors_environment)
 
   common_roles = {
-    acr_pull = {
-      scope                = data.terraform_remote_state.foundation.outputs.acr_id
-      role_definition_name = "AcrPull"
-    }
     app_configuration_reader = {
       scope                = data.terraform_remote_state.foundation.outputs.app_configuration_id
       role_definition_name = "App Configuration Data Reader"
@@ -138,12 +133,12 @@ locals {
     identity_presence = {
       name           = "ca-presence-${var.environment_name}-${local.suffix}"
       container_name = "identity-presence-service"
-      image          = "${local.image_prefix}/identity-presence-service:${var.image_tag}"
+      image          = "${local.image_prefix}-identity-presence-service:${var.image_tag}"
       identity_key   = "identity_presence"
       environment = merge(local.common_environment, {
         AZURE_CLIENT_ID = { value = module.workload_identity["identity_presence"].client_id }
         ConnectionStrings__Default = {
-          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=identity_presence_db;Username=${module.workload_identity["identity_presence"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=identity_presence_db;Username=${module.workload_identity["identity_presence"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=5;Minimum Pool Size=0"
         }
         Postgres__UseManagedIdentity = { value = "true" }
       })
@@ -154,17 +149,18 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale       = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {}
     }
     bank_a = {
       name           = "ca-bank-a-${var.environment_name}-${local.suffix}"
       container_name = "bank-a-ledger-service"
-      image          = "${local.image_prefix}/bank-ledger-service:${var.image_tag}"
+      image          = "${local.image_prefix}-bank-ledger-service:${var.image_tag}"
       identity_key   = "bank_a"
       environment = merge(local.common_environment, {
         AZURE_CLIENT_ID = { value = module.workload_identity["bank_a"].client_id }
         ConnectionStrings__Default = {
-          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=bank_a_ledger_db;Username=${module.workload_identity["bank_a"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=bank_a_ledger_db;Username=${module.workload_identity["bank_a"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=5;Minimum Pool Size=0"
         }
         Postgres__UseManagedIdentity    = { value = "true" }
         Bank__Id                        = { value = "bank-a" }
@@ -179,17 +175,28 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {
+        servicebus_queue = {
+          custom_rule_type = "azure-servicebus"
+          identity_id      = module.workload_identity["bank_a"].id
+          metadata = {
+            namespace    = data.terraform_remote_state.foundation.outputs.servicebus_namespace_name
+            queueName    = "bank-a-commands"
+            messageCount = "1"
+          }
+        }
+      }
     }
     bank_b = {
       name           = "ca-bank-b-${var.environment_name}-${local.suffix}"
       container_name = "bank-b-ledger-service"
-      image          = "${local.image_prefix}/bank-ledger-service:${var.image_tag}"
+      image          = "${local.image_prefix}-bank-ledger-service:${var.image_tag}"
       identity_key   = "bank_b"
       environment = merge(local.common_environment, {
         AZURE_CLIENT_ID = { value = module.workload_identity["bank_b"].client_id }
         ConnectionStrings__Default = {
-          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=bank_b_ledger_db;Username=${module.workload_identity["bank_b"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=bank_b_ledger_db;Username=${module.workload_identity["bank_b"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=5;Minimum Pool Size=0"
         }
         Postgres__UseManagedIdentity    = { value = "true" }
         Bank__Id                        = { value = "bank-b" }
@@ -204,17 +211,28 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {
+        servicebus_queue = {
+          custom_rule_type = "azure-servicebus"
+          identity_id      = module.workload_identity["bank_b"].id
+          metadata = {
+            namespace    = data.terraform_remote_state.foundation.outputs.servicebus_namespace_name
+            queueName    = "bank-b-commands"
+            messageCount = "1"
+          }
+        }
+      }
     }
     transaction = {
       name           = "ca-tx-${var.environment_name}-${local.suffix}"
       container_name = "transaction-service"
-      image          = "${local.image_prefix}/transaction-service:${var.image_tag}"
+      image          = "${local.image_prefix}-transaction-service:${var.image_tag}"
       identity_key   = "transaction"
       environment = merge(local.common_environment, {
         AZURE_CLIENT_ID = { value = module.workload_identity["transaction"].client_id }
         ConnectionStrings__Default = {
-          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=transaction_db;Username=${module.workload_identity["transaction"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=transaction_db;Username=${module.workload_identity["transaction"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=5;Minimum Pool Size=0"
         }
         Postgres__UseManagedIdentity           = { value = "true" }
         EventBus__ServiceBus__SubscriptionName = { value = "transaction" }
@@ -230,17 +248,29 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {
+        servicebus_subscription = {
+          custom_rule_type = "azure-servicebus"
+          identity_id      = module.workload_identity["transaction"].id
+          metadata = {
+            namespace        = data.terraform_remote_state.foundation.outputs.servicebus_namespace_name
+            topicName        = data.terraform_remote_state.foundation.outputs.servicebus_topic_name
+            subscriptionName = "transaction"
+            messageCount     = "1"
+          }
+        }
+      }
     }
     realtime_events = {
       name           = "ca-events-${var.environment_name}-${local.suffix}"
       container_name = "realtime-events-service"
-      image          = "${local.image_prefix}/realtime-events-service:${var.image_tag}"
+      image          = "${local.image_prefix}-realtime-events-service:${var.image_tag}"
       identity_key   = "realtime_events"
       environment = merge(local.common_environment, {
         AZURE_CLIENT_ID = { value = module.workload_identity["realtime_events"].client_id }
         ConnectionStrings__Default = {
-          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=realtime_projection_db;Username=${module.workload_identity["realtime_events"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=10;Minimum Pool Size=0"
+          value = "Host=${data.terraform_remote_state.foundation.outputs.postgres_fqdn};Port=5432;Database=realtime_projection_db;Username=${module.workload_identity["realtime_events"].name};SSL Mode=Require;Trust Server Certificate=false;Maximum Pool Size=5;Minimum Pool Size=0"
         }
         Postgres__UseManagedIdentity           = { value = "true" }
         EventBus__ServiceBus__SubscriptionName = { value = "realtime-events-v2" }
@@ -252,7 +282,19 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {
+        servicebus_subscription = {
+          custom_rule_type = "azure-servicebus"
+          identity_id      = module.workload_identity["realtime_events"].id
+          metadata = {
+            namespace        = data.terraform_remote_state.foundation.outputs.servicebus_namespace_name
+            topicName        = data.terraform_remote_state.foundation.outputs.servicebus_topic_name
+            subscriptionName = "realtime-events-v2"
+            messageCount     = "1"
+          }
+        }
+      }
     }
   }
 }
@@ -266,12 +308,12 @@ module "internal_apps" {
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   identity_id                  = module.workload_identity[each.value.identity_key].id
-  registry                     = { server = local.acr_login_server }
   image                        = each.value.image
   environment                  = each.value.environment
   secrets                      = each.value.secrets
   ingress                      = each.value.ingress
   scale                        = each.value.scale
+  custom_scale_rules           = each.value.scale_rules
   tags                         = local.common_tags
 
   depends_on = [module.workload_identity]
@@ -285,8 +327,7 @@ module "api_gateway" {
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   identity_id                  = module.workload_identity["api_gateway"].id
-  registry                     = { server = local.acr_login_server }
-  image                        = "${local.image_prefix}/api-gateway:${var.image_tag}"
+  image                        = "${local.image_prefix}-api-gateway:${var.image_tag}"
   environment = merge(local.common_environment, {
     AZURE_CLIENT_ID            = { value = module.workload_identity["api_gateway"].client_id }
     Services__IdentityPresence = { value = "https://${module.internal_apps["identity_presence"].fqdn}" }
@@ -301,31 +342,54 @@ module "api_gateway" {
     cors_allowed_origins   = []
     cors_allow_credentials = false
   }
-  scale = { min_replicas = 1, max_replicas = 2 }
+  scale = { min_replicas = 0, max_replicas = 1 }
   tags  = local.common_tags
 
   depends_on = [module.internal_apps]
 }
 
-module "bot" {
-  source = "../modules/container-app"
-
-  name                         = "ca-bot-${var.environment_name}-${local.suffix}"
-  container_name               = "bot-service"
-  container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
+resource "azurerm_container_app_job" "bot" {
+  name                         = "job-bot-${var.environment_name}-${local.suffix}"
+  location                     = local.location
   resource_group_name          = local.resource_group_name
-  identity_id                  = module.workload_identity["bot"].id
-  registry                     = { server = local.acr_login_server }
-  image                        = "${local.image_prefix}/bot-service:${var.image_tag}"
-  environment = merge(local.common_environment, {
-    AZURE_CLIENT_ID  = { value = module.workload_identity["bot"].client_id }
-    WalletServiceUrl = { value = "https://${module.api_gateway.fqdn}" }
-  })
-  ingress = null
-  scale   = { min_replicas = 1, max_replicas = 1 }
-  tags    = local.common_tags
+  container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
+  replica_timeout_in_seconds   = 300
+  replica_retry_limit          = 1
+  tags                         = local.common_tags
 
-  depends_on = [module.api_gateway]
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [module.workload_identity["bot"].id]
+  }
+
+  manual_trigger_config {
+    parallelism              = 1
+    replica_completion_count = 1
+  }
+
+  template {
+    container {
+      name   = "bot-maintenance"
+      image  = "${local.image_prefix}-bot-service:${var.image_tag}"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      dynamic "env" {
+        for_each = merge(local.common_environment, {
+          AZURE_CLIENT_ID  = { value = module.workload_identity["bot"].client_id }
+          Bot__RunOnce     = { value = "true" }
+          WalletServiceUrl = { value = "https://${module.api_gateway.fqdn}" }
+        })
+        content {
+          name        = env.key
+          value       = try(env.value.value, null)
+          secret_name = try(env.value.secret_name, null)
+        }
+      }
+    }
+  }
+
+  depends_on = [module.api_gateway, module.workload_identity]
 }
 
 module "legacy_wallet" {
@@ -336,8 +400,7 @@ module "legacy_wallet" {
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   identity_id                  = module.workload_identity["legacy_wallet"].id
-  registry                     = { server = local.acr_login_server }
-  image                        = "${local.image_prefix}/wallet-ledger-service:${var.image_tag}"
+  image                        = "${local.image_prefix}-wallet-ledger-service:${var.image_tag}"
   environment = merge(local.common_environment, {
     AZURE_CLIENT_ID                        = { value = module.workload_identity["legacy_wallet"].client_id }
     EventBus__ServiceBus__SubscriptionName = { value = "wallet-ledger" }
@@ -358,7 +421,6 @@ locals {
     { for key, app in module.internal_apps : key => app.id },
     {
       api_gateway = module.api_gateway.id
-      bot         = module.bot.id
     }
   )
 }

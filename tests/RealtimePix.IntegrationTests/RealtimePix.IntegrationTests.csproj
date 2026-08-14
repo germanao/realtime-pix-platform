@@ -4,6 +4,15 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <!--
+      Testcontainers 4.13.0 transitively references SSH.NET 2025.1.0 for its optional
+      SSH Docker endpoint. These tests use the local Docker socket and never invoke
+      SSH.NET. Suppress only GHSA-q939-rpr3-3284 until patched SSH.NET 2026.0.0 is
+      published to NuGet and adopted by Testcontainers.
+    -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-q939-rpr3-3284" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Azure.Messaging.ServiceBus" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Npgsql" />

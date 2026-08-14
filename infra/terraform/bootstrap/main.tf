@@ -50,10 +50,6 @@ module "github_apply" {
       name    = "github-${var.github_environment_name}"
       subject = local.github_subject_env
     }
-    branch = {
-      name    = "github-${var.github_branch}"
-      subject = local.github_subject_branch
-    }
   }
   role_assignments = {
     tfstate = {
@@ -99,31 +95,6 @@ module "github_plan" {
     }
   }
   tags = merge(local.common_tags, { responsibility = "terraform-plan" })
-}
-
-module "github_image_push" {
-  source = "../modules/github-oidc"
-
-  name                = "id-${var.project_name}-github-images-${var.environment_name}"
-  resource_group_name = azurerm_resource_group.app.name
-  location            = azurerm_resource_group.app.location
-  subjects = {
-    environment = {
-      name    = "github-${var.github_environment_name}-images"
-      subject = local.github_subject_env
-    }
-  }
-  role_assignments = {
-    tfstate = {
-      scope                = module.state_backend.storage_account_id
-      role_definition_name = "Storage Blob Data Reader"
-    }
-    app_reader = {
-      scope                = azurerm_resource_group.app.id
-      role_definition_name = "Reader"
-    }
-  }
-  tags = merge(local.common_tags, { responsibility = "container-image-push" })
 }
 
 resource "azurerm_consumption_budget_subscription" "project" {
@@ -181,11 +152,6 @@ moved {
 }
 
 moved {
-  from = azurerm_federated_identity_credential.github_main_branch
-  to   = module.github_apply.azurerm_federated_identity_credential.this["branch"]
-}
-
-moved {
   from = azurerm_role_assignment.github_tfstate_blob_contributor
   to   = module.github_apply.azurerm_role_assignment.this["tfstate"]
 }
@@ -223,24 +189,4 @@ moved {
 moved {
   from = azurerm_role_assignment.github_plan_app_reader
   to   = module.github_plan.azurerm_role_assignment.this["app_reader"]
-}
-
-moved {
-  from = azurerm_user_assigned_identity.github_image_push
-  to   = module.github_image_push.azurerm_user_assigned_identity.this
-}
-
-moved {
-  from = azurerm_federated_identity_credential.github_image_environment
-  to   = module.github_image_push.azurerm_federated_identity_credential.this["environment"]
-}
-
-moved {
-  from = azurerm_role_assignment.github_image_tfstate_reader
-  to   = module.github_image_push.azurerm_role_assignment.this["tfstate"]
-}
-
-moved {
-  from = azurerm_role_assignment.github_image_app_reader
-  to   = module.github_image_push.azurerm_role_assignment.this["app_reader"]
 }

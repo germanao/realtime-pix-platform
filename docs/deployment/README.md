@@ -10,7 +10,9 @@ Terraform and GitHub Actions are the current deployment path. The Azure Portal/A
 4. Run `scripts/cloud/bootstrap-github-variables.sh` to synchronize the resulting non-secret GitHub variables.
 5. Run `scripts/cloud/migrate-environment-state-keys.sh` once if old POC state keys exist.
 6. Run `infrastructure-apply.yml` with operation `plan` before an approved `apply` for foundation changes.
-7. Run `deploy-poc.yml` to build immutable images, apply runtime, configure Entra database principals, run EF migrations, execute cloud Saga smoke tests, and synchronize Vercel variables.
+7. Run `deploy-poc.yml` to build immutable images, apply the scale-to-zero runtime, configure Entra database principals, run EF migrations, execute the one-shot bot maintenance job, run cloud Saga smoke tests, and synchronize Vercel variables.
+
+The POC is tuned for an eligible Azure account's 12-month free-service allowances. Read [free-tier operations](free-tier.md) before applying because Azure budgets notify but do not stop resources automatically.
 
 The deployment workflow performs five Saga scenarios through APIM: completion, debit rejection, compensated credit rejection, compensated credit timeout, and refund rejection/manual intervention. It verifies persisted transitions, unique ledger operations, projections, idempotent replay, and fictional-money accounting.
 

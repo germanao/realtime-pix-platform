@@ -2,7 +2,7 @@
 
 This stack deploys seven active workloads: Gateway, Identity/Presence, Bank A, Bank B, Transaction, Realtime Events, and Bot. The bank deployments share an image but use separate identity/database/queue configuration. A trafficless legacy wallet app remains at zero replicas for one release.
 
-Images must already exist in ACR with the immutable `image_tag` supplied by the deployment workflow.
+Images must already exist as public GHCR packages with the immutable `image_tag` supplied by the deployment workflow. The default prefix is `ghcr.io/germanao/realtime-pix`; override `image_repository_prefix` when deploying a fork.
 
 ```bash
 terraform init \

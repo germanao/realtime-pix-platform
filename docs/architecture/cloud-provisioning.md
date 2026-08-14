@@ -8,18 +8,18 @@ The backend is Azure-only; the Next.js frontend uses Vercel. Terraform is the so
 | --- | --- |
 | Containers | Container Apps Consumption |
 | HTTP edge | API Management Consumption |
-| Images | Container Registry Basic |
+| Images | Public GitHub Container Registry packages |
 | Messaging | Service Bus Standard |
 | Browser realtime | SignalR Free |
 | Relational state | PostgreSQL Flexible Server B1ms |
 | Configuration | App Configuration Free |
-| Secrets/bootstrap | Key Vault Standard |
 | Telemetry | Log Analytics and Application Insights |
-| Future push | Notification Hubs Free |
 
 Five databases are active: `identity_presence_db`, `bank_a_ledger_db`, `bank_b_ledger_db`, `transaction_db`, and `realtime_projection_db`. `wallet_ledger_db` is a trafficless one-release rollback artifact, not an active ownership boundary.
 
-All seven active Container Apps use a dedicated user-assigned managed identity and `min_replicas = 1`. Bank A and Bank B have separate databases, queues, and identities even though they use one image. PostgreSQL authentication and Azure SDK access use Microsoft Entra tokens; no application database password or Service Bus shared key is stored in Container Apps.
+The six HTTP/message workloads use dedicated user-assigned managed identities, `min_replicas = 0`, and `max_replicas = 1`. HTTP ingress wakes request-driven services, while Azure Service Bus KEDA rules wake Bank A, Bank B, Transaction, and Realtime consumers. Bot maintenance is a manual Container Apps Job started by the deployment workflow, so no background replica remains allocated. PostgreSQL authentication and Azure SDK access use Microsoft Entra tokens; no application database password or Service Bus shared key is stored in Container Apps.
+
+The free-tier profile caps Log Analytics ingestion at 0.1 GB/day and disables chargeable log-query alerts. Platform-metric alerts remain within Azure Monitor's first ten free monitored time series. See [free-tier operations](../deployment/free-tier.md) for quotas, expiration, and cost controls.
 
 Dynamic Vercel preview hosts require one explicit POC compromise. Azure SignalR accepts exact origins or the global `*`, but not partial host wildcards, so its managed transport uses `*` in the POC. The Identity/Presence and Realtime negotiate endpoints still allow only localhost, the production Vercel URL, and generated preview hosts containing both the configured Vercel project name (`realtime-pix`) and owning scope (`germanaos-projects`); APIM applies the same constraint. Forks must override both values. The non-deployed production profile uses exact SignalR origins. See the [Azure SignalR CORS CLI contract](https://learn.microsoft.com/en-us/cli/azure/signalr/cors?view=azure-cli-latest).
 
@@ -38,7 +38,7 @@ Bootstrap is also excluded from GitHub apply workflows. A subscription owner run
 ## GitHub Identity Boundaries
 
 - Plan identity: read-only Azure access for trusted pull requests.
-- Image identity: ACR push only.
+- Image publishing: repository-scoped `GITHUB_TOKEN` writes public GHCR packages; no Azure identity.
 - Apply identity: scoped management of the application resource group plus state data-plane access; it has no bootstrap, state-resource-group, or subscription-budget permissions.
 
 Federated credentials bind exact GitHub repository/environment subjects. Workflows store only client, tenant, subscription, and backend identifiers; Azure client secrets are not used.

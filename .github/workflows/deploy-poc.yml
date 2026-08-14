@@ -7,6 +7,8 @@ on:
       - "services/**"
       - "building-blocks/**"
       - "contracts/**"
+      - "infra/terraform/runtime/**"
+      - "infra/terraform/modules/container-app/**"
       - "scripts/cloud/**"
       - "Directory.Build.props"
       - "Directory.Packages.props"
@@ -22,12 +24,13 @@ on:
         options: ["false", "true"]
 
 concurrency:
-  group: deploy-poc
+  group: poc-cloud-mutations
   cancel-in-progress: false
 
 permissions:
   contents: read
   id-token: write
+  packages: write
 
 jobs:
   deploy:
@@ -50,10 +53,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Sign in with image-push identity
+      - name: Sign in with apply identity
         uses: azure/login@v3
         with:
-          client-id: ${{ vars.AZURE_IMAGE_CLIENT_ID || vars.AZURE_CLIENT_ID }}
+          client-id: ${{ vars.AZURE_APPLY_CLIENT_ID || vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
@@ -69,8 +72,6 @@ jobs:
             -backend-config="key=poc/foundation.tfstate" \
             -backend-config="use_azuread_auth=true"
 
-          echo "acr_name=$(terraform output -raw acr_name)" >> "$GITHUB_OUTPUT"
-          echo "acr_login_server=$(terraform output -raw acr_login_server)" >> "$GITHUB_OUTPUT"
           echo "resource_group_name=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
           echo "postgres_fqdn=$(terraform output -raw postgres_fqdn)" >> "$GITHUB_OUTPUT"
           echo "postgres_server_name=$(terraform output -raw postgres_server_name)" >> "$GITHUB_OUTPUT"
@@ -80,17 +81,22 @@ jobs:
       - name: Build and push application images
         shell: bash
         env:
-          ACR_NAME: ${{ steps.foundation.outputs.acr_name }}
-          ACR_LOGIN_SERVER: ${{ steps.foundation.outputs.acr_login_server }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/realtime-pix
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          az acr login --name "$ACR_NAME"
+          IMAGE_PREFIX="${IMAGE_PREFIX,,}"
+          echo "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
 
           build_and_push() {
             local repository="$1"
             local dockerfile="$2"
-            local image="$ACR_LOGIN_SERVER/realtime-pix/$repository:$IMAGE_TAG"
-            docker build --file "$dockerfile" --tag "$image" .
+            local image="$IMAGE_PREFIX-$repository:$IMAGE_TAG"
+            docker build \
+              --file "$dockerfile" \
+              --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+              --tag "$image" \
+              .
             docker push "$image"
           }
 
@@ -102,17 +108,6 @@ jobs:
           build_and_push bot-service services/bot-service/Dockerfile
           # Transitional image only: no traffic, min replicas zero, removed after one release.
           build_and_push wallet-ledger-service services/wallet-ledger-service/Dockerfile
-
-      - name: Sign out image-push identity
-        shell: bash
-        run: az logout
-
-      - name: Sign in with apply identity
-        uses: azure/login@v3
-        with:
-          client-id: ${{ vars.AZURE_APPLY_CLIENT_ID || vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Apply runtime application revision
         id: runtime
@@ -131,6 +126,7 @@ jobs:
 
           echo "workload_identities=$(terraform output -json workload_identities | jq -c .)" >> "$GITHUB_OUTPUT"
           echo "container_apps=$(terraform output -json active_container_app_names | jq -c .)" >> "$GITHUB_OUTPUT"
+          echo "bot_job_name=$(terraform output -raw bot_job_name)" >> "$GITHUB_OUTPUT"
           echo "api_url=$(terraform output -raw apim_api_url)" >> "$GITHUB_OUTPUT"
           echo "presence_hub_url=$(terraform output -raw presence_hub_url)" >> "$GITHUB_OUTPUT"
           echo "events_hub_url=$(terraform output -raw events_hub_url)" >> "$GITHUB_OUTPUT"
@@ -208,6 +204,40 @@ jobs:
           SERVICEBUS_NAMESPACE: ${{ steps.foundation.outputs.servicebus_namespace_name }}
         run: bash scripts/cloud/remove-servicebus-default-rules.sh
 
+      - name: Seed and fund bots with an on-demand job
+        shell: bash
+        env:
+          RESOURCE_GROUP: ${{ steps.foundation.outputs.resource_group_name }}
+          BOT_JOB_NAME: ${{ steps.runtime.outputs.bot_job_name }}
+        run: |
+          execution_name="$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$BOT_JOB_NAME" \
+            --query name \
+            --output tsv)"
+
+          if [[ -z "$execution_name" ]]; then
+            echo "Bot maintenance did not return an execution name." >&2
+            exit 1
+          fi
+
+          for attempt in {1..30}; do
+            status="$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$BOT_JOB_NAME" \
+              --job-execution-name "$execution_name" \
+              --query properties.status \
+              --output tsv 2>/dev/null || true)"
+            case "$status" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped) echo "Bot maintenance ended with status $status." >&2; exit 1 ;;
+            esac
+            sleep 10
+          done
+
+          echo "Bot maintenance did not finish within five minutes." >&2
+          exit 1
+
       - name: Run cloud Saga smoke tests
         id: smoke
         shell: bash
@@ -254,6 +284,10 @@ jobs:
             az containerapp logs show --resource-group "$RESOURCE_GROUP" --name "$app" --tail 120 --format text --follow false || true
             echo "::endgroup::"
           done
+          az containerapp job execution list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "${{ steps.runtime.outputs.bot_job_name }}" \
+            --output table || true
 
       - name: Remove temporary PostgreSQL firewall rule
         if: always() && steps.runner_ip.outputs.ip != ''

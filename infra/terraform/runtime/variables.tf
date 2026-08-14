@@ -30,6 +30,17 @@ variable "image_tag" {
   type        = string
 }
 
+variable "image_repository_prefix" {
+  description = "Public container image prefix without a service suffix or tag."
+  type        = string
+  default     = "ghcr.io/germanao/realtime-pix"
+
+  validation {
+    condition     = startswith(var.image_repository_prefix, "ghcr.io/") && lower(var.image_repository_prefix) == var.image_repository_prefix
+    error_message = "The POC image prefix must be a lowercase ghcr.io path."
+  }
+}
+
 variable "app_config_label" {
   description = "Azure App Configuration label."
   type        = string

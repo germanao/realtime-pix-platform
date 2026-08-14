@@ -26,7 +26,7 @@ Users join anonymously, receive accounts at two banks, deposit fictional funds, 
 | Bank B Ledger | Bank B balances and append-only ledger | Bank B DB |
 | Transaction | Saga orchestration, deadlines, idempotency | Transaction DB |
 | Realtime Events | Timeline and transfer-flow projections | Realtime DB |
-| Bot Worker | Always-available demo participants | None |
+| Bot maintenance job | Seeds and funds demo participants during deployment | None |
 
 The same `bank-ledger-service` image is deployed twice with different bank configuration, identity, queue, and database. See [the architecture guide](docs/architecture/README.md) and [decision records](docs/architecture/decisions/README.md).
 
@@ -81,9 +81,10 @@ CI also builds every deployable Docker image, validates/tests Terraform, runs ar
 
 ## Cloud Deployment
 
-The POC backend runs in Azure and the frontend deploys to Vercel. GitHub Actions authenticates to Azure through OIDC; no Azure client secret is stored in GitHub.
+The POC backend runs in Azure and the frontend deploys to Vercel. The POC profile scales every service to zero, caps replicas at one, and runs bot maintenance as an on-demand job to stay inside an eligible Azure account's free allowances. GitHub Actions authenticates to Azure through OIDC; no Azure client secret is stored in GitHub.
 
 - [Current deployment index](docs/deployment/README.md)
+- [Free-tier limits and operations](docs/deployment/free-tier.md)
 - [Azure and Terraform topology](docs/architecture/cloud-provisioning.md)
 - [Terraform stacks](infra/terraform)
 - [Production reference limitations](infra/terraform/production-reference/README.md)
