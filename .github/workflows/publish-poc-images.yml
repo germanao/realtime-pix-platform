@@ -1,0 +1,54 @@
+name: publish-poc-images
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: poc-image-publishing
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.repository }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repository: api-gateway
+            dockerfile: services/api-gateway/Dockerfile
+          - repository: identity-presence-service
+            dockerfile: services/identity-presence-service/Dockerfile
+          - repository: bank-ledger-service
+            dockerfile: services/bank-ledger-service/Dockerfile
+          - repository: transaction-service
+            dockerfile: services/transaction-service/Dockerfile
+          - repository: realtime-events-service
+            dockerfile: services/realtime-events-service/Dockerfile
+          - repository: bot-service
+            dockerfile: services/bot-service/Dockerfile
+          - repository: wallet-ledger-service
+            dockerfile: services/wallet-ledger-service/Dockerfile
+    steps:
+      - uses: actions/checkout@v6
+      - name: Sign in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Build and publish immutable image
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/realtime-pix-${{ matrix.repository }}:${{ github.sha }}
+        run: |
+          image="${IMAGE,,}"
+          docker build \
+            --file "${{ matrix.dockerfile }}" \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --tag "$image" \
+            .
+          docker push "$image"
