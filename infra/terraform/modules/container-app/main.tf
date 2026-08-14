@@ -7,7 +7,7 @@ resource "azurerm_container_app" "this" {
   tags                         = var.tags
 
   identity {
-    type         = "UserAssigned"
+    type         = var.identity_type
     identity_ids = [var.identity_id]
   }
 
@@ -60,7 +60,7 @@ resource "azurerm_container_app" "this" {
     dynamic "custom_scale_rule" {
       for_each = var.custom_scale_rules
       content {
-        name             = custom_scale_rule.key
+        name             = replace(custom_scale_rule.key, "_", "-")
         custom_rule_type = custom_scale_rule.value.custom_rule_type
         metadata         = custom_scale_rule.value.metadata
         identity_id      = custom_scale_rule.value.identity_id

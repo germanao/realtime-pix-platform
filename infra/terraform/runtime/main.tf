@@ -135,6 +135,7 @@ locals {
       container_name = "identity-presence-service"
       image          = "${local.image_prefix}-identity-presence-service:${var.image_tag}"
       identity_key   = "identity_presence"
+      identity_type  = "SystemAssigned, UserAssigned"
       environment = merge(local.common_environment, {
         AZURE_CLIENT_ID = { value = module.workload_identity["identity_presence"].client_id }
         ConnectionStrings__Default = {
@@ -267,6 +268,7 @@ locals {
       container_name = "realtime-events-service"
       image          = "${local.image_prefix}-realtime-events-service:${var.image_tag}"
       identity_key   = "realtime_events"
+      identity_type  = "SystemAssigned, UserAssigned"
       environment = merge(local.common_environment, {
         AZURE_CLIENT_ID = { value = module.workload_identity["realtime_events"].client_id }
         ConnectionStrings__Default = {
@@ -308,6 +310,7 @@ module "internal_apps" {
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   identity_id                  = module.workload_identity[each.value.identity_key].id
+  identity_type                = try(each.value.identity_type, "UserAssigned")
   image                        = each.value.image
   environment                  = each.value.environment
   secrets                      = each.value.secrets
@@ -327,6 +330,7 @@ module "api_gateway" {
   container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
   resource_group_name          = local.resource_group_name
   identity_id                  = module.workload_identity["api_gateway"].id
+  identity_type                = "SystemAssigned, UserAssigned"
   image                        = "${local.image_prefix}-api-gateway:${var.image_tag}"
   environment = merge(local.common_environment, {
     AZURE_CLIENT_ID            = { value = module.workload_identity["api_gateway"].client_id }
