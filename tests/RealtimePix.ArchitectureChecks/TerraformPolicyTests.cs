@@ -49,15 +49,19 @@ public sealed class TerraformPolicyTests
     }
 
     [Fact]
-    public void Poc_free_tier_guards_cap_telemetry_and_use_the_included_registry_sku()
+    public void Poc_free_tier_guards_cap_telemetry_and_use_public_ghcr()
     {
         var foundation = Read("infra", "terraform", "foundation", "main.tf");
         var observability = Read("infra", "terraform", "modules", "observability", "main.tf");
+        var runtimeVariables = Read("infra", "terraform", "runtime", "variables.tf");
+        var deployment = Read(".github", "workflows", "deploy-poc.yml");
 
-        Assert.Contains("sku                 = \"Standard\"", foundation, StringComparison.Ordinal);
         Assert.Contains("daily_quota_gb      = 0.1", foundation, StringComparison.Ordinal);
         Assert.Contains("log_alerts_enabled  = false", foundation, StringComparison.Ordinal);
         Assert.Contains("daily_quota_gb      = var.daily_quota_gb", observability, StringComparison.Ordinal);
+        Assert.Contains("default     = \"ghcr.io/germanao/realtime-pix\"", runtimeVariables, StringComparison.Ordinal);
+        Assert.Contains("packages: write", deployment, StringComparison.Ordinal);
+        Assert.DoesNotContain("azurerm_container_registry", foundation, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -87,14 +91,13 @@ public sealed class TerraformPolicyTests
     }
 
     [Fact]
-    public void Key_vault_firewalls_default_to_deny()
+    public void Poc_omits_unused_secret_and_push_services_while_production_key_vault_defaults_to_deny()
     {
         var foundation = Read("infra", "terraform", "foundation", "main.tf");
         var production = Read("infra", "terraform", "production-reference", "main.tf");
 
-        Assert.Matches(
-            @"network_acls\s*\{\s*bypass\s*=\s*""AzureServices""\s*default_action\s*=\s*""Deny""",
-            foundation);
+        Assert.DoesNotContain("azurerm_key_vault", foundation, StringComparison.Ordinal);
+        Assert.DoesNotContain("azurerm_notification_hub", foundation, StringComparison.Ordinal);
         Assert.Matches(
             @"network_acls\s*\{\s*bypass\s*=\s*""None""\s*default_action\s*=\s*""Deny""",
             production);
