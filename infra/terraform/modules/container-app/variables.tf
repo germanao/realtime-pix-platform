@@ -30,6 +30,12 @@ variable "identity_id" {
   type        = string
 }
 
+variable "identity_type" {
+  description = "Container App identity mode. Public ingress apps use a system identity during initial Azure provisioning in addition to their dedicated user-assigned identity."
+  type        = string
+  default     = "UserAssigned"
+}
+
 variable "registry" {
   description = "Optional private registry settings. Public images do not require a registry block."
   type = object({
