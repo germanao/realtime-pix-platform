@@ -92,6 +92,22 @@ variable "scale" {
   })
 }
 
+variable "custom_scale_rules" {
+  description = "KEDA custom scale rules keyed by a stable Terraform name."
+  type = map(object({
+    custom_rule_type = string
+    metadata         = map(string)
+    identity_id      = optional(string)
+  }))
+  default = {}
+}
+
+variable "http_concurrent_requests" {
+  description = "Concurrent requests per replica for the explicit HTTP wake-up rule."
+  type        = number
+  default     = 10
+}
+
 variable "resources" {
   description = "Container CPU and memory allocation."
   type = object({

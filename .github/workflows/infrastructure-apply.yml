@@ -23,7 +23,7 @@ on:
         required: false
 
 concurrency:
-  group: terraform-poc-apply
+  group: poc-cloud-mutations
   cancel-in-progress: false
 
 permissions:

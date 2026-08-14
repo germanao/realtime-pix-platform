@@ -5,15 +5,26 @@ using RealtimePix.Eventing;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddRealtimePixAzureAppConfiguration();
+var runOnce = builder.Configuration.GetValue("Bot:RunOnce", false);
 if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
 {
     builder.Services.AddOpenTelemetry().UseAzureMonitor();
 }
 builder.Services.AddRealtimePixEventBus(builder.Configuration, BotMetadata.ServiceName);
 builder.Services.AddBotInfrastructure(builder.Configuration);
-builder.Services.AddHostedService<BotMaintenanceWorker>();
+if (!runOnce)
+{
+    builder.Services.AddHostedService<BotMaintenanceWorker>();
+}
 
 var app = builder.Build();
+if (runOnce)
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<MaintainBotsHandler>().ExecuteAsync(CancellationToken.None);
+    return;
+}
+
 app.MapGet("/health", () => Results.Ok(new { service = BotMetadata.ServiceName, status = "ok" }));
 app.MapGet("/health/live", () => Results.Ok(new { service = BotMetadata.ServiceName, status = "live" }));
 app.MapGet("/health/ready", async (IBotReadinessProbe probe, CancellationToken cancellationToken) =>

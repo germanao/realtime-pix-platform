@@ -65,6 +65,8 @@ module "observability" {
   location            = var.location
   publisher_email     = var.publisher_email
   retention_days      = 30
+  daily_quota_gb      = 0.1
+  log_alerts_enabled  = false
   tags                = local.common_tags
 }
 
@@ -93,7 +95,7 @@ resource "azurerm_container_registry" "main" {
   name                = "acrrealtimepix${local.suffix}"
   resource_group_name = data.azurerm_resource_group.app.name
   location            = var.location
-  sku                 = "Basic"
+  sku                 = "Standard"
   admin_enabled       = false
   tags                = local.common_tags
 }

@@ -7,6 +7,8 @@ on:
       - "services/**"
       - "building-blocks/**"
       - "contracts/**"
+      - "infra/terraform/runtime/**"
+      - "infra/terraform/modules/container-app/**"
       - "scripts/cloud/**"
       - "Directory.Build.props"
       - "Directory.Packages.props"
@@ -22,7 +24,7 @@ on:
         options: ["false", "true"]
 
 concurrency:
-  group: deploy-poc
+  group: poc-cloud-mutations
   cancel-in-progress: false
 
 permissions:
@@ -131,6 +133,7 @@ jobs:
 
           echo "workload_identities=$(terraform output -json workload_identities | jq -c .)" >> "$GITHUB_OUTPUT"
           echo "container_apps=$(terraform output -json active_container_app_names | jq -c .)" >> "$GITHUB_OUTPUT"
+          echo "bot_job_name=$(terraform output -raw bot_job_name)" >> "$GITHUB_OUTPUT"
           echo "api_url=$(terraform output -raw apim_api_url)" >> "$GITHUB_OUTPUT"
           echo "presence_hub_url=$(terraform output -raw presence_hub_url)" >> "$GITHUB_OUTPUT"
           echo "events_hub_url=$(terraform output -raw events_hub_url)" >> "$GITHUB_OUTPUT"
@@ -208,6 +211,40 @@ jobs:
           SERVICEBUS_NAMESPACE: ${{ steps.foundation.outputs.servicebus_namespace_name }}
         run: bash scripts/cloud/remove-servicebus-default-rules.sh
 
+      - name: Seed and fund bots with an on-demand job
+        shell: bash
+        env:
+          RESOURCE_GROUP: ${{ steps.foundation.outputs.resource_group_name }}
+          BOT_JOB_NAME: ${{ steps.runtime.outputs.bot_job_name }}
+        run: |
+          execution_name="$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$BOT_JOB_NAME" \
+            --query name \
+            --output tsv)"
+
+          if [[ -z "$execution_name" ]]; then
+            echo "Bot maintenance did not return an execution name." >&2
+            exit 1
+          fi
+
+          for attempt in {1..30}; do
+            status="$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$BOT_JOB_NAME" \
+              --job-execution-name "$execution_name" \
+              --query properties.status \
+              --output tsv 2>/dev/null || true)"
+            case "$status" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped) echo "Bot maintenance ended with status $status." >&2; exit 1 ;;
+            esac
+            sleep 10
+          done
+
+          echo "Bot maintenance did not finish within five minutes." >&2
+          exit 1
+
       - name: Run cloud Saga smoke tests
         id: smoke
         shell: bash
@@ -254,6 +291,10 @@ jobs:
             az containerapp logs show --resource-group "$RESOURCE_GROUP" --name "$app" --tail 120 --format text --follow false || true
             echo "::endgroup::"
           done
+          az containerapp job execution list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "${{ steps.runtime.outputs.bot_job_name }}" \
+            --output table || true
 
       - name: Remove temporary PostgreSQL firewall rule
         if: always() && steps.runner_ip.outputs.ip != ''

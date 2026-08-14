@@ -43,7 +43,7 @@ variable "github_branch" {
 variable "monthly_budget_amount" {
   description = "Monthly Azure budget amount in USD. Set to 0 to skip the budget."
   type        = number
-  default     = 50
+  default     = 1
 }
 
 variable "budget_contact_emails" {

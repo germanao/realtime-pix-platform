@@ -154,7 +154,8 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale       = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {}
     }
     bank_a = {
       name           = "ca-bank-a-${var.environment_name}-${local.suffix}"
@@ -179,7 +180,18 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {
+        servicebus_queue = {
+          custom_rule_type = "azure-servicebus"
+          identity_id      = module.workload_identity["bank_a"].id
+          metadata = {
+            namespace    = data.terraform_remote_state.foundation.outputs.servicebus_namespace_name
+            queueName    = "bank-a-commands"
+            messageCount = "1"
+          }
+        }
+      }
     }
     bank_b = {
       name           = "ca-bank-b-${var.environment_name}-${local.suffix}"
@@ -204,7 +216,18 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {
+        servicebus_queue = {
+          custom_rule_type = "azure-servicebus"
+          identity_id      = module.workload_identity["bank_b"].id
+          metadata = {
+            namespace    = data.terraform_remote_state.foundation.outputs.servicebus_namespace_name
+            queueName    = "bank-b-commands"
+            messageCount = "1"
+          }
+        }
+      }
     }
     transaction = {
       name           = "ca-tx-${var.environment_name}-${local.suffix}"
@@ -230,7 +253,19 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {
+        servicebus_subscription = {
+          custom_rule_type = "azure-servicebus"
+          identity_id      = module.workload_identity["transaction"].id
+          metadata = {
+            namespace        = data.terraform_remote_state.foundation.outputs.servicebus_namespace_name
+            topicName        = data.terraform_remote_state.foundation.outputs.servicebus_topic_name
+            subscriptionName = "transaction"
+            messageCount     = "1"
+          }
+        }
+      }
     }
     realtime_events = {
       name           = "ca-events-${var.environment_name}-${local.suffix}"
@@ -252,7 +287,19 @@ locals {
         cors_allowed_origins   = []
         cors_allow_credentials = false
       }
-      scale = { min_replicas = 1, max_replicas = 1 }
+      scale = { min_replicas = 0, max_replicas = 1 }
+      scale_rules = {
+        servicebus_subscription = {
+          custom_rule_type = "azure-servicebus"
+          identity_id      = module.workload_identity["realtime_events"].id
+          metadata = {
+            namespace        = data.terraform_remote_state.foundation.outputs.servicebus_namespace_name
+            topicName        = data.terraform_remote_state.foundation.outputs.servicebus_topic_name
+            subscriptionName = "realtime-events-v2"
+            messageCount     = "1"
+          }
+        }
+      }
     }
   }
 }
@@ -272,6 +319,7 @@ module "internal_apps" {
   secrets                      = each.value.secrets
   ingress                      = each.value.ingress
   scale                        = each.value.scale
+  custom_scale_rules           = each.value.scale_rules
   tags                         = local.common_tags
 
   depends_on = [module.workload_identity]
@@ -301,31 +349,59 @@ module "api_gateway" {
     cors_allowed_origins   = []
     cors_allow_credentials = false
   }
-  scale = { min_replicas = 1, max_replicas = 2 }
+  scale = { min_replicas = 0, max_replicas = 1 }
   tags  = local.common_tags
 
   depends_on = [module.internal_apps]
 }
 
-module "bot" {
-  source = "../modules/container-app"
-
-  name                         = "ca-bot-${var.environment_name}-${local.suffix}"
-  container_name               = "bot-service"
-  container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
+resource "azurerm_container_app_job" "bot" {
+  name                         = "job-bot-${var.environment_name}-${local.suffix}"
+  location                     = local.location
   resource_group_name          = local.resource_group_name
-  identity_id                  = module.workload_identity["bot"].id
-  registry                     = { server = local.acr_login_server }
-  image                        = "${local.image_prefix}/bot-service:${var.image_tag}"
-  environment = merge(local.common_environment, {
-    AZURE_CLIENT_ID  = { value = module.workload_identity["bot"].client_id }
-    WalletServiceUrl = { value = "https://${module.api_gateway.fqdn}" }
-  })
-  ingress = null
-  scale   = { min_replicas = 1, max_replicas = 1 }
-  tags    = local.common_tags
+  container_app_environment_id = data.terraform_remote_state.foundation.outputs.container_app_environment_id
+  replica_timeout_in_seconds   = 300
+  replica_retry_limit          = 1
+  tags                         = local.common_tags
 
-  depends_on = [module.api_gateway]
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [module.workload_identity["bot"].id]
+  }
+
+  registry {
+    server   = local.acr_login_server
+    identity = module.workload_identity["bot"].id
+  }
+
+  manual_trigger_config {
+    parallelism              = 1
+    replica_completion_count = 1
+  }
+
+  template {
+    container {
+      name   = "bot-maintenance"
+      image  = "${local.image_prefix}/bot-service:${var.image_tag}"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      dynamic "env" {
+        for_each = merge(local.common_environment, {
+          AZURE_CLIENT_ID  = { value = module.workload_identity["bot"].client_id }
+          Bot__RunOnce     = { value = "true" }
+          WalletServiceUrl = { value = "https://${module.api_gateway.fqdn}" }
+        })
+        content {
+          name        = env.key
+          value       = try(env.value.value, null)
+          secret_name = try(env.value.secret_name, null)
+        }
+      }
+    }
+  }
+
+  depends_on = [module.api_gateway, module.workload_identity]
 }
 
 module "legacy_wallet" {
@@ -358,7 +434,6 @@ locals {
     { for key, app in module.internal_apps : key => app.id },
     {
       api_gateway = module.api_gateway.id
-      bot         = module.bot.id
     }
   )
 }

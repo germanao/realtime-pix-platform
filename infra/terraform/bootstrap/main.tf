@@ -50,10 +50,6 @@ module "github_apply" {
       name    = "github-${var.github_environment_name}"
       subject = local.github_subject_env
     }
-    branch = {
-      name    = "github-${var.github_branch}"
-      subject = local.github_subject_branch
-    }
   }
   role_assignments = {
     tfstate = {
@@ -178,11 +174,6 @@ moved {
 moved {
   from = azurerm_federated_identity_credential.github_environment
   to   = module.github_apply.azurerm_federated_identity_credential.this["environment"]
-}
-
-moved {
-  from = azurerm_federated_identity_credential.github_main_branch
-  to   = module.github_apply.azurerm_federated_identity_credential.this["branch"]
 }
 
 moved {

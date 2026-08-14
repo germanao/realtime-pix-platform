@@ -36,15 +36,28 @@ public sealed class TerraformPolicyTests
     }
 
     [Fact]
-    public void Poc_uses_dedicated_identities_and_keeps_all_active_apps_warm()
+    public void Poc_uses_dedicated_identities_and_scales_active_apps_to_zero()
     {
         var runtime = Read("infra", "terraform", "runtime", "main.tf");
 
         Assert.Contains("module \"workload_identity\"", runtime, StringComparison.Ordinal);
-        Assert.Equal(7, CountOccurrences(runtime, "min_replicas = 1"));
-        Assert.Contains("scale = { min_replicas = 1, max_replicas = 1 }", runtime, StringComparison.Ordinal);
-        Assert.Contains("scale = { min_replicas = 1, max_replicas = 2 }", runtime, StringComparison.Ordinal);
-        Assert.Contains("scale = { min_replicas = 0, max_replicas = 1 }", runtime, StringComparison.Ordinal);
+        Assert.Equal(7, CountOccurrences(runtime, "min_replicas = 0"));
+        Assert.Equal(4, CountOccurrences(runtime, "custom_rule_type = \"azure-servicebus\""));
+        Assert.Contains("resource \"azurerm_container_app_job\" \"bot\"", runtime, StringComparison.Ordinal);
+        Assert.Contains("Bot__RunOnce", runtime, StringComparison.Ordinal);
+        Assert.DoesNotContain("min_replicas = 1", runtime, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Poc_free_tier_guards_cap_telemetry_and_use_the_included_registry_sku()
+    {
+        var foundation = Read("infra", "terraform", "foundation", "main.tf");
+        var observability = Read("infra", "terraform", "modules", "observability", "main.tf");
+
+        Assert.Contains("sku                 = \"Standard\"", foundation, StringComparison.Ordinal);
+        Assert.Contains("daily_quota_gb      = 0.1", foundation, StringComparison.Ordinal);
+        Assert.Contains("log_alerts_enabled  = false", foundation, StringComparison.Ordinal);
+        Assert.Contains("daily_quota_gb      = var.daily_quota_gb", observability, StringComparison.Ordinal);
     }
 
     [Fact]
