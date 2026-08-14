@@ -87,8 +87,7 @@ run "container_app_identity_and_replica_contract" {
     container_app_environment_id = "/subscriptions/test/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/test"
     resource_group_name          = "rg-test"
     identity_id                  = "/subscriptions/test/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/transaction"
-    registry                     = { server = "example.azurecr.io" }
-    image                        = "example.azurecr.io/transaction-service:immutable-sha"
+    image                        = "ghcr.io/example/realtime-pix-transaction-service:immutable-sha"
     scale                        = { min_replicas = 0, max_replicas = 1 }
     custom_scale_rules = {
       servicebus = {
@@ -120,6 +119,10 @@ run "container_app_identity_and_replica_contract" {
   assert {
     condition     = length(azurerm_container_app.this.template[0].http_scale_rule) == 1
     error_message = "Ingress services need an explicit HTTP rule so requests wake zero replicas."
+  }
+  assert {
+    condition     = length(azurerm_container_app.this.registry) == 0
+    error_message = "Public GHCR images must not configure private-registry credentials."
   }
   assert {
     condition     = azurerm_container_app.this.ingress[0].external_enabled == false

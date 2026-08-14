@@ -8,14 +8,12 @@ The backend is Azure-only; the Next.js frontend uses Vercel. Terraform is the so
 | --- | --- |
 | Containers | Container Apps Consumption |
 | HTTP edge | API Management Consumption |
-| Images | Container Registry Standard (12-month free allowance) |
+| Images | Public GitHub Container Registry packages |
 | Messaging | Service Bus Standard |
 | Browser realtime | SignalR Free |
 | Relational state | PostgreSQL Flexible Server B1ms |
 | Configuration | App Configuration Free |
-| Secrets/bootstrap | Key Vault Standard |
 | Telemetry | Log Analytics and Application Insights |
-| Future push | Notification Hubs Free |
 
 Five databases are active: `identity_presence_db`, `bank_a_ledger_db`, `bank_b_ledger_db`, `transaction_db`, and `realtime_projection_db`. `wallet_ledger_db` is a trafficless one-release rollback artifact, not an active ownership boundary.
 
@@ -40,7 +38,7 @@ Bootstrap is also excluded from GitHub apply workflows. A subscription owner run
 ## GitHub Identity Boundaries
 
 - Plan identity: read-only Azure access for trusted pull requests.
-- Image identity: ACR push only.
+- Image publishing: repository-scoped `GITHUB_TOKEN` writes public GHCR packages; no Azure identity.
 - Apply identity: scoped management of the application resource group plus state data-plane access; it has no bootstrap, state-resource-group, or subscription-budget permissions.
 
 Federated credentials bind exact GitHub repository/environment subjects. Workflows store only client, tenant, subscription, and backend identifiers; Azure client secrets are not used.

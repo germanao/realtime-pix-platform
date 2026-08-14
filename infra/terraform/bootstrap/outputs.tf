@@ -30,14 +30,6 @@ output "github_plan_client_id" {
   value = module.github_plan.client_id
 }
 
-output "github_image_push_client_id" {
-  value = module.github_image_push.client_id
-}
-
-output "github_image_push_principal_id" {
-  value = module.github_image_push.principal_id
-}
-
 output "github_actions_principal_id" {
   value = module.github_apply.principal_id
 }

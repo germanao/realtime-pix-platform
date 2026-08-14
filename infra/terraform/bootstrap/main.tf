@@ -97,31 +97,6 @@ module "github_plan" {
   tags = merge(local.common_tags, { responsibility = "terraform-plan" })
 }
 
-module "github_image_push" {
-  source = "../modules/github-oidc"
-
-  name                = "id-${var.project_name}-github-images-${var.environment_name}"
-  resource_group_name = azurerm_resource_group.app.name
-  location            = azurerm_resource_group.app.location
-  subjects = {
-    environment = {
-      name    = "github-${var.github_environment_name}-images"
-      subject = local.github_subject_env
-    }
-  }
-  role_assignments = {
-    tfstate = {
-      scope                = module.state_backend.storage_account_id
-      role_definition_name = "Storage Blob Data Reader"
-    }
-    app_reader = {
-      scope                = azurerm_resource_group.app.id
-      role_definition_name = "Reader"
-    }
-  }
-  tags = merge(local.common_tags, { responsibility = "container-image-push" })
-}
-
 resource "azurerm_consumption_budget_subscription" "project" {
   count           = var.monthly_budget_amount > 0 && length(var.budget_contact_emails) > 0 ? 1 : 0
   name            = "budget-${var.project_name}-${var.environment_name}"
@@ -214,24 +189,4 @@ moved {
 moved {
   from = azurerm_role_assignment.github_plan_app_reader
   to   = module.github_plan.azurerm_role_assignment.this["app_reader"]
-}
-
-moved {
-  from = azurerm_user_assigned_identity.github_image_push
-  to   = module.github_image_push.azurerm_user_assigned_identity.this
-}
-
-moved {
-  from = azurerm_federated_identity_credential.github_image_environment
-  to   = module.github_image_push.azurerm_federated_identity_credential.this["environment"]
-}
-
-moved {
-  from = azurerm_role_assignment.github_image_tfstate_reader
-  to   = module.github_image_push.azurerm_role_assignment.this["tfstate"]
-}
-
-moved {
-  from = azurerm_role_assignment.github_image_app_reader
-  to   = module.github_image_push.azurerm_role_assignment.this["app_reader"]
 }

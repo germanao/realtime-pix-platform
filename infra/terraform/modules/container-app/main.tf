@@ -11,9 +11,12 @@ resource "azurerm_container_app" "this" {
     identity_ids = [var.identity_id]
   }
 
-  registry {
-    server   = var.registry.server
-    identity = var.identity_id
+  dynamic "registry" {
+    for_each = var.registry == null ? [] : [var.registry]
+    content {
+      server   = registry.value.server
+      identity = var.identity_id
+    }
   }
 
   dynamic "secret" {

@@ -19,7 +19,7 @@ on:
         type: choice
         options: [foundation, runtime, all]
       image_tag:
-        description: "Existing ACR image tag (required for runtime/all)"
+        description: "Existing public GHCR image tag (required for runtime/all)"
         required: false
 
 concurrency:

@@ -31,10 +31,12 @@ variable "identity_id" {
 }
 
 variable "registry" {
-  description = "Private registry settings."
+  description = "Optional private registry settings. Public images do not require a registry block."
   type = object({
     server = string
   })
+  default  = null
+  nullable = true
 }
 
 variable "image" {

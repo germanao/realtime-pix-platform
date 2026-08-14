@@ -1,5 +1,3 @@
-data "azurerm_client_config" "current" {}
-
 data "terraform_remote_state" "bootstrap" {
   backend = "azurerm"
 
@@ -72,11 +70,9 @@ module "observability" {
 
 locals {
   diagnostic_targets = {
-    acr            = azurerm_container_registry.main.id
     postgresql     = module.postgresql.id
     service_bus    = module.service_bus.namespace_id
     signalr        = module.signalr.id
-    key_vault      = azurerm_key_vault.main.id
     app_config     = azurerm_app_configuration.main.id
     api_management = module.apim.id
   }
@@ -89,27 +85,6 @@ module "diagnostic_setting" {
   name                       = "diag-${replace(each.key, "_", "-")}-${local.suffix}"
   target_resource_id         = each.value
   log_analytics_workspace_id = module.observability.log_analytics_workspace_id
-}
-
-resource "azurerm_container_registry" "main" {
-  name                = "acrrealtimepix${local.suffix}"
-  resource_group_name = data.azurerm_resource_group.app.name
-  location            = var.location
-  sku                 = "Standard"
-  admin_enabled       = false
-  tags                = local.common_tags
-}
-
-resource "azurerm_role_assignment" "github_image_push" {
-  scope                = azurerm_container_registry.main.id
-  role_definition_name = "AcrPush"
-  principal_id         = data.terraform_remote_state.bootstrap.outputs.github_image_push_principal_id
-}
-
-resource "azurerm_role_assignment" "github_acr_push" {
-  scope                = azurerm_container_registry.main.id
-  role_definition_name = "AcrPush"
-  principal_id         = data.terraform_remote_state.bootstrap.outputs.github_actions_principal_id
 }
 
 module "postgresql" {
@@ -211,30 +186,6 @@ module "signalr" {
   tags                  = local.common_tags
 }
 
-resource "azurerm_key_vault" "main" {
-  name                          = "kv-rtpix-${local.suffix}"
-  resource_group_name           = data.azurerm_resource_group.app.name
-  location                      = var.location
-  tenant_id                     = data.azurerm_client_config.current.tenant_id
-  sku_name                      = "standard"
-  rbac_authorization_enabled    = true
-  soft_delete_retention_days    = 7
-  purge_protection_enabled      = false
-  public_network_access_enabled = true
-  tags                          = local.common_tags
-
-  network_acls {
-    bypass         = "AzureServices"
-    default_action = "Deny"
-  }
-}
-
-resource "azurerm_role_assignment" "current_user_keyvault_admin" {
-  scope                = azurerm_key_vault.main.id
-  role_definition_name = "Key Vault Administrator"
-  principal_id         = data.azurerm_client_config.current.object_id
-}
-
 resource "azurerm_app_configuration" "main" {
   name                  = "appcs-${var.project_name}-${var.environment_name}-${random_id.app_configuration_suffix.hex}"
   resource_group_name   = data.azurerm_resource_group.app.name
@@ -262,23 +213,6 @@ module "apim" {
   publisher_name      = var.publisher_name
   publisher_email     = var.publisher_email
   sku_name            = "Consumption_0"
-  tags                = local.common_tags
-}
-
-resource "azurerm_notification_hub_namespace" "main" {
-  name                = "nhns-${var.project_name}-${var.environment_name}-${local.suffix}"
-  resource_group_name = data.azurerm_resource_group.app.name
-  location            = var.location
-  namespace_type      = "NotificationHub"
-  sku_name            = "Free"
-  tags                = local.common_tags
-}
-
-resource "azurerm_notification_hub" "main" {
-  name                = "nh-${var.project_name}-${var.environment_name}"
-  namespace_name      = azurerm_notification_hub_namespace.main.name
-  resource_group_name = data.azurerm_resource_group.app.name
-  location            = var.location
   tags                = local.common_tags
 }
 
