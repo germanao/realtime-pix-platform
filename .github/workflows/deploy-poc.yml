@@ -281,7 +281,7 @@ jobs:
             --output table || true
           for app in $(az containerapp list --resource-group "$RESOURCE_GROUP" --query "[].name" --output tsv); do
             echo "::group::${app} logs"
-            az containerapp logs show --resource-group "$RESOURCE_GROUP" --name "$app" --tail 120 --format text --follow false || true
+            az containerapp logs show --resource-group "$RESOURCE_GROUP" --name "$app" --tail 1000 --format text --follow false || true
             echo "::endgroup::"
           done
           az containerapp job execution list \
