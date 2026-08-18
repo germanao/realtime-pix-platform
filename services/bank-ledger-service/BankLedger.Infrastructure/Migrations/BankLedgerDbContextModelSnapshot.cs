@@ -17,7 +17,7 @@ namespace BankLedger.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
+                .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -197,8 +197,8 @@ namespace BankLedger.Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("ClaimedBy")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<DateTimeOffset?>("ClaimedUntil")
                         .HasColumnType("timestamp with time zone");

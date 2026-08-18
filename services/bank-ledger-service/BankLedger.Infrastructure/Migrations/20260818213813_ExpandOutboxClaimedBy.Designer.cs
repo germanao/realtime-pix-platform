@@ -2,18 +2,21 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using RealtimeEvents.Infrastructure;
+using RealtimePix.BankLedger.Infrastructure;
 
 #nullable disable
 
-namespace RealtimeEventsService.Migrations
+namespace BankLedger.Infrastructure.Migrations
 {
-    [DbContext(typeof(RealtimeProjectionDbContext))]
-    partial class RealtimeProjectionDbContextModelSnapshot : ModelSnapshot
+    [DbContext(typeof(BankLedgerDbContext))]
+    [Migration("20260818213813_ExpandOutboxClaimedBy")]
+    partial class ExpandOutboxClaimedBy
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -22,112 +25,139 @@ namespace RealtimeEventsService.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("RealtimeEvents.Infrastructure.FlowStepEntity", b =>
+            modelBuilder.Entity("RealtimePix.BankLedger.Infrastructure.BankAccountEntity", b =>
                 {
-                    b.Property<string>("StepId")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                    b.Property<string>("AccountId")
+                        .HasMaxLength(220)
+                        .HasColumnType("character varying(220)");
 
-                    b.Property<string>("CausationId")
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
+                    b.Property<decimal>("Balance")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
 
-                    b.Property<string>("CorrelationId")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<string>("Detail")
-                        .IsRequired()
-                        .HasMaxLength(700)
-                        .HasColumnType("character varying(700)");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<string>("Outcome")
+                    b.Property<string>("BankId")
                         .IsRequired()
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
 
-                    b.Property<string>("Producer")
+                    b.Property<string>("BankName")
                         .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
 
-                    b.Property<DateTimeOffset>("RecordedAt")
+                    b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("SourceEventId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Stage")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<string>("Title")
+                    b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)");
 
-                    b.Property<string>("TransferId")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                    b.HasKey("AccountId");
 
-                    b.HasKey("StepId");
-
-                    b.HasIndex("SourceEventId")
+                    b.HasIndex("UserId", "BankId")
                         .IsUnique();
 
-                    b.HasIndex("TransferId", "RecordedAt");
-
-                    b.ToTable("flow_steps", (string)null);
+                    b.ToTable("bank_accounts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_bank_accounts_nonnegative_balance", "\"Balance\" >= 0");
+                        });
                 });
 
-            modelBuilder.Entity("RealtimeEvents.Infrastructure.TimelineEventEntity", b =>
+            modelBuilder.Entity("RealtimePix.BankLedger.Infrastructure.BankLedgerEntryEntity", b =>
                 {
-                    b.Property<string>("EventId")
+                    b.Property<string>("LedgerEntryId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.Property<string>("CorrelationId")
+                    b.Property<string>("AccountId")
                         .IsRequired()
+                        .HasMaxLength(220)
+                        .HasColumnType("character varying(220)");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("BalanceAfter")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("BankId")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("CounterpartyUserId")
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)");
 
-                    b.Property<string>("EventType")
+                    b.Property<string>("Description")
                         .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
 
                     b.Property<DateTimeOffset>("OccurredAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("PayloadJson")
+                    b.Property<string>("OperationType")
                         .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("Producer")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
 
                     b.Property<string>("TransferId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.HasKey("EventId");
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
 
-                    b.HasIndex("OccurredAt");
+                    b.HasKey("LedgerEntryId");
 
-                    b.HasIndex("TransferId");
+                    b.HasIndex("AccountId", "OccurredAt");
 
-                    b.ToTable("timeline_events", (string)null);
+                    b.HasIndex("TransferId", "OperationType")
+                        .IsUnique()
+                        .HasFilter("\"TransferId\" IS NOT NULL");
+
+                    b.ToTable("bank_ledger_entries", (string)null);
+                });
+
+            modelBuilder.Entity("RealtimePix.BankLedger.Infrastructure.ProcessedBankOperationEntity", b =>
+                {
+                    b.Property<string>("TransferId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("OperationType")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<DateTimeOffset>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.HasKey("TransferId", "OperationType");
+
+                    b.ToTable("processed_bank_operations", (string)null);
                 });
 
             modelBuilder.Entity("RealtimePix.Eventing.IntegrationInboxMessage", b =>

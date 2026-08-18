@@ -76,7 +76,9 @@ public static class EfCoreEventingModel
             entity.Property(item => item.DestinationKind).HasMaxLength(24).IsRequired();
             entity.Property(item => item.Destination).HasMaxLength(180).IsRequired();
             entity.Property(item => item.Status).HasMaxLength(24).IsRequired();
-            entity.Property(item => item.ClaimedBy).HasMaxLength(80);
+            // Container Apps replica identifiers can exceed 80 characters.  Keep the
+            // lease owner intact so a worker can safely release its own claims.
+            entity.Property(item => item.ClaimedBy).HasMaxLength(256);
             entity.Property(item => item.EnvelopeJson).HasColumnType("jsonb").IsRequired();
             entity.HasIndex(item => new { item.PublishedAt, item.OccurredAt });
             entity.HasIndex(item => new { item.Status, item.ClaimedUntil, item.OccurredAt });
