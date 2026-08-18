@@ -17,12 +17,12 @@ namespace IdentityPresenceService.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
+                .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("AnonymousSessionEntity", b =>
+            modelBuilder.Entity("IdentityPresence.Infrastructure.AnonymousSessionEntity", b =>
                 {
                     b.Property<string>("SessionToken")
                         .HasMaxLength(64)
@@ -48,7 +48,7 @@ namespace IdentityPresenceService.Migrations
                     b.ToTable("anonymous_sessions", (string)null);
                 });
 
-            modelBuilder.Entity("PresenceConnectionEntity", b =>
+            modelBuilder.Entity("IdentityPresence.Infrastructure.PresenceConnectionEntity", b =>
                 {
                     b.Property<string>("ConnectionId")
                         .HasMaxLength(160)
@@ -69,7 +69,7 @@ namespace IdentityPresenceService.Migrations
                     b.ToTable("presence_connections", (string)null);
                 });
 
-            modelBuilder.Entity("PresenceUserEntity", b =>
+            modelBuilder.Entity("IdentityPresence.Infrastructure.PresenceUserEntity", b =>
                 {
                     b.Property<string>("UserId")
                         .HasMaxLength(160)
@@ -139,8 +139,8 @@ namespace IdentityPresenceService.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("ClaimedBy")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<DateTimeOffset?>("ClaimedUntil")
                         .HasColumnType("timestamp with time zone");
