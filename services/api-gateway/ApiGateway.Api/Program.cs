@@ -167,11 +167,6 @@ static string ExpandRoute(string template, RouteValueDictionary routeValues)
 
 static async Task<string?> ReadBodyAsync(HttpRequest request, CancellationToken cancellationToken)
 {
-    if (request.ContentLength is not > 0)
-    {
-        return null;
-    }
-
     using var reader = new StreamReader(request.Body);
     return await reader.ReadToEndAsync(cancellationToken);
 }
