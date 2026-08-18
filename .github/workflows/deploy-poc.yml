@@ -288,6 +288,23 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --name "${{ steps.runtime.outputs.bot_job_name }}" \
             --output table || true
+          latest_execution="$(az containerapp job execution list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "${{ steps.runtime.outputs.bot_job_name }}" \
+            --query "[0].name" \
+            --output tsv 2>/dev/null || true)"
+          if [[ -n "$latest_execution" ]]; then
+            echo "::group::Bot job logs (${latest_execution})"
+            az containerapp job logs show \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "${{ steps.runtime.outputs.bot_job_name }}" \
+              --execution "$latest_execution" \
+              --container "bot-maintenance" \
+              --tail 200 \
+              --format text \
+              --follow false || true
+            echo "::endgroup::"
+          fi
 
       - name: Remove temporary PostgreSQL firewall rule
         if: always() && steps.runner_ip.outputs.ip != ''
