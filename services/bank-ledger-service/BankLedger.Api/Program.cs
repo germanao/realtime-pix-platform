@@ -52,6 +52,10 @@ app.UseExceptionHandler(exceptionHandlerApp =>
     exceptionHandlerApp.Run(async context =>
     {
         var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        context.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("BankLedger.ExceptionHandler")
+            .LogError(exception, "Unhandled bank ledger request failure for {Method} {Path}.", context.Request.Method, context.Request.Path);
         var statusCode = exception is ArgumentException ? StatusCodes.Status400BadRequest : StatusCodes.Status500InternalServerError;
         await Results.Problem(
             statusCode: statusCode,
