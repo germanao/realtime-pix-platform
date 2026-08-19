@@ -134,8 +134,21 @@ jobs:
       - name: Install PostgreSQL client
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          for attempt in 1 2 3; do
+            if sudo timeout 180 apt-get \
+              -o Acquire::Retries=2 \
+              -o Acquire::http::Timeout=30 \
+              -o Acquire::https::Timeout=30 \
+              update && sudo timeout 180 apt-get install -y --no-install-recommends postgresql-client; then
+              exit 0
+            fi
+
+            if [ "$attempt" = "3" ]; then
+              exit 1
+            fi
+
+            sleep 10
+          done
 
       - name: Temporarily allow runner IP to PostgreSQL
         id: runner_ip
