@@ -1,7 +1,7 @@
 # Vercel is invoked at the repository root so it can resolve the project's
 # apps/web Root Directory. Preserve that directory structure, but exclude the
 # generated outputs produced by the deployment workflow before Vercel uploads.
-**/bin/
-**/obj/
-**/.next/
-**/node_modules/
+**/bin/**
+**/obj/**
+**/.next/**
+**/node_modules/**
