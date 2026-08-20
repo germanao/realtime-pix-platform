@@ -276,16 +276,19 @@ jobs:
             printf '%s\n' "$value" | npx vercel env add "$key" "$target" --token "$VERCEL_API_TOKEN"
           }
 
-          for target in production preview; do
-            sync_env NEXT_PUBLIC_API_BASE_URL "$API_URL" "$target"
-            sync_env NEXT_PUBLIC_PRESENCE_HUB_URL "$PRESENCE_HUB_URL" "$target"
-            sync_env NEXT_PUBLIC_EVENTS_HUB_URL "$EVENTS_HUB_URL" "$target"
-          done
+          # Preview variables prompt for an optional branch in current Vercel CLI
+          # releases. This deployment only publishes production, so update the
+          # environment that is actually consumed by the production build.
+          sync_env NEXT_PUBLIC_API_BASE_URL "$API_URL" production
+          sync_env NEXT_PUBLIC_PRESENCE_HUB_URL "$PRESENCE_HUB_URL" production
+          sync_env NEXT_PUBLIC_EVENTS_HUB_URL "$EVENTS_HUB_URL" production
 
           # NEXT_PUBLIC_* values are compiled into the browser bundle. Publish a
           # fresh production build after synchronizing them so the live client
           # uses the current Container Apps endpoints.
-          npx vercel --prod --yes --token "$VERCEL_API_TOKEN"
+          # The Vercel project Root Directory is apps/web. Run from the checkout
+          # root so Vercel can resolve that setting (not apps/web/apps/web).
+          (cd ../.. && npx vercel --prod --yes --token "$VERCEL_API_TOKEN")
 
       - name: Dump Container Apps diagnostics
         if: failure() && steps.runtime.outcome != 'skipped'
