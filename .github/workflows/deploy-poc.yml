@@ -282,6 +282,11 @@ jobs:
             sync_env NEXT_PUBLIC_EVENTS_HUB_URL "$EVENTS_HUB_URL" "$target"
           done
 
+          # NEXT_PUBLIC_* values are compiled into the browser bundle. Publish a
+          # fresh production build after synchronizing them so the live client
+          # uses the current Container Apps endpoints.
+          npx vercel --prod --yes --token "$VERCEL_API_TOKEN"
+
       - name: Dump Container Apps diagnostics
         if: failure() && steps.runtime.outcome != 'skipped'
         shell: bash
