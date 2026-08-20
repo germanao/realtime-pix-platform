@@ -19,7 +19,9 @@ public sealed class PresenceHub(
     public async Task<AnonymousSessionResponse> Join(AnonymousSessionRequest request)
     {
         var result = await connectHandler.HandleAsync(request.ClientId, Context.ConnectionId, Context.ConnectionAborted);
-        await broadcaster.BroadcastSnapshotAsync(result.ActiveUsers, Context.ConnectionAborted);
+        var broadcast = broadcaster.BroadcastSnapshotAsync(result.ActiveUsers, CancellationToken.None);
+        _ = broadcast.ContinueWith(static _ => { }, TaskContinuationOptions.OnlyOnFaulted);
+        await Task.WhenAny(broadcast, Task.Delay(TimeSpan.FromSeconds(2)));
         return result.Session;
     }
 
