@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Net.Http.Headers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using RealtimePix.ApiGateway.Application;
@@ -32,10 +33,13 @@ public sealed class ConfiguredBackendClient(
         using var message = new HttpRequestMessage(request.Method, target);
         if (request.Body is not null)
         {
-            message.Content = new StringContent(
-                request.Body,
-                Encoding.UTF8,
-                request.ContentType ?? "application/json");
+            var content = new StringContent(request.Body, Encoding.UTF8, "application/json");
+            if (MediaTypeHeaderValue.TryParse(request.ContentType, out var contentType))
+            {
+                content.Headers.ContentType = contentType;
+            }
+
+            message.Content = content;
         }
 
         try
