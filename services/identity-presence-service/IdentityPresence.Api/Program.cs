@@ -84,7 +84,8 @@ app.MapPost("/sessions/anonymous", async (
         ? Guid.NewGuid().ToString("N")
         : request.ClientId.Trim();
     var result = await handler.HandleAsync(clientId, $"http:{clientId}", cancellationToken);
-    await broadcaster.BroadcastSnapshotAsync(result.ActiveUsers, cancellationToken);
+    var broadcast = broadcaster.BroadcastSnapshotAsync(result.ActiveUsers, CancellationToken.None);
+    _ = broadcast.ContinueWith(static _ => { }, TaskContinuationOptions.OnlyOnFaulted);
     return Results.Ok(result.Session);
 });
 
