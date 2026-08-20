@@ -17,6 +17,21 @@ import type {
   WalletBootstrap
 } from "@/lib/types";
 
+const presenceJoinTimeoutMs = 8_000;
+
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([operation, timeout]).finally(() => {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
+  });
+}
+
 export function useRealtimePixPlatform() {
   const [session, setSession] = useState<Session | null>(null);
   const [users, setUsers] = useState<PresenceUser[]>([]);
@@ -173,9 +188,17 @@ export function useRealtimePixPlatform() {
         });
         connection.onclose(() => setConnectionState("disconnected"));
 
-        await connection.start();
+        await withTimeout(
+          connection.start(),
+          presenceJoinTimeoutMs,
+          "The live presence connection timed out."
+        );
         setConnectionState("connected");
-        const nextSession = await connection.invoke<Session>("Join", { clientId });
+        const nextSession = await withTimeout(
+          connection.invoke<Session>("Join", { clientId }),
+          presenceJoinTimeoutMs,
+          "The live presence join timed out."
+        );
         await acceptSession(nextSession);
 
         pageHideHandler = () => {
@@ -186,6 +209,7 @@ export function useRealtimePixPlatform() {
         };
         window.addEventListener("pagehide", pageHideHandler);
       } catch (joinError) {
+        await presenceConnectionRef.current?.stop().catch(() => undefined);
         try {
           const nextSession = await api<Session>("/sessions/anonymous", {
             method: "POST",

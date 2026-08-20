@@ -73,9 +73,20 @@ app.MapHub<PresenceHub>("/presence/hub");
 
 app.MapPost("/sessions/anonymous", async (
     AnonymousSessionRequest request,
-    JoinAnonymousHandler handler,
+    ConnectAnonymousHandler handler,
+    PresenceBroadcaster broadcaster,
     CancellationToken cancellationToken) =>
-    Results.Ok(await handler.HandleAsync(request.ClientId, cancellationToken)));
+{
+    // This endpoint is the browser fallback when a websocket transport is
+    // unavailable. Give it a stable synthetic connection so fallback users are
+    // represented in the same presence projection as SignalR users.
+    var clientId = string.IsNullOrWhiteSpace(request.ClientId)
+        ? Guid.NewGuid().ToString("N")
+        : request.ClientId.Trim();
+    var result = await handler.HandleAsync(clientId, $"http:{clientId}", cancellationToken);
+    await broadcaster.BroadcastSnapshotAsync(result.ActiveUsers, cancellationToken);
+    return Results.Ok(result.Session);
+});
 
 app.MapPost("/presence/heartbeat", async (
     PresenceHeartbeatRequest request,
