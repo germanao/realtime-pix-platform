@@ -285,15 +285,14 @@ jobs:
 
           # NEXT_PUBLIC_* values are compiled into the browser bundle. Publish a
           # fresh production build after synchronizing them so the live client
-          # uses the current Container Apps endpoints.
-          # The Vercel project Root Directory is apps/web. Run from the checkout
-          # root so Vercel can resolve that setting (not apps/web/apps/web).
-          (cd ../.. && npx vercel --prod --yes --token "$VERCEL_API_TOKEN")
-
-          # NEXT_PUBLIC_* values are compiled into the browser bundle. Publish a
-          # fresh production build after synchronizing them so the live client
-          # uses the current Container Apps endpoints.
-          npx vercel --prod --yes --token "$VERCEL_API_TOKEN"
+          # uses the current Container Apps endpoints. The project uses apps/web
+          # as its Vercel Root Directory, so link the checkout root to that
+          # project before publishing from the checkout root.
+          (
+            cd ../..
+            npx vercel link --yes --project "$VERCEL_PROJECT_NAME" --token "$VERCEL_API_TOKEN"
+            npx vercel --prod --yes --token "$VERCEL_API_TOKEN"
+          )
 
       - name: Dump Container Apps diagnostics
         if: failure() && steps.runtime.outcome != 'skipped'
