@@ -286,11 +286,14 @@ jobs:
 
           # NEXT_PUBLIC_* values are compiled into the browser bundle. Publish a
           # fresh production build after synchronizing them so the live client
-          # uses the current Container Apps endpoints. The project uses apps/web
-          # as its Vercel Root Directory, so link the checkout root to that
-          # project before publishing from the checkout root.
+          # uses the current Container Apps endpoints. Stage only the web app
+          # beneath its configured apps/web Root Directory: Vercel otherwise
+          # attempts to upload generated .NET artifacts from the checkout.
           (
-            cd ../..
+            publish_root="$(mktemp -d)"
+            mkdir -p "$publish_root/apps"
+            cp -R . "$publish_root/apps/web"
+            cd "$publish_root"
             npx vercel link --yes --project "$VERCEL_PROJECT_NAME" --token "$VERCEL_API_TOKEN"
             npx vercel --prod --yes --token "$VERCEL_API_TOKEN"
           )
