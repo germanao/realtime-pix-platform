@@ -1,0 +1,46 @@
+name: deploy-web
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/deploy-web.yml"
+
+concurrency:
+  group: realtime-pix-web-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: poc
+    env:
+      VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
+      VERCEL_PROJECT_NAME: realtime-pix-web
+      AWS_RUNTIME_URL: https://djb1ah1j5qyrj.cloudfront.net
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure the scheduled AWS runtime URL
+        working-directory: apps/web
+        shell: bash
+        run: |
+          npx vercel link --yes --project "$VERCEL_PROJECT_NAME" --token "$VERCEL_API_TOKEN"
+          npx vercel env rm NEXT_PUBLIC_AWS_RUNTIME_URL production --yes --token "$VERCEL_API_TOKEN" >/dev/null 2>&1 || true
+          printf '%s\n' "$AWS_RUNTIME_URL" | npx vercel env add NEXT_PUBLIC_AWS_RUNTIME_URL production --token "$VERCEL_API_TOKEN"
+
+      - name: Publish the production web application
+        working-directory: apps/web
+        shell: bash
+        run: |
+          publish_root="$(mktemp -d)"
+          mkdir -p "$publish_root/apps"
+          cp -R . "$publish_root/apps/web"
+          cd "$publish_root"
+          npx vercel link --yes --project "$VERCEL_PROJECT_NAME" --token "$VERCEL_API_TOKEN"
+          npx vercel --prod --yes --token "$VERCEL_API_TOKEN"
