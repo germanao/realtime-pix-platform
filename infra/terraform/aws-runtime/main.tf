@@ -193,7 +193,9 @@ resource "aws_cloudfront_distribution" "runtime" {
   price_class     = "PriceClass_100"
 
   origin {
-    domain_name = aws_instance.runtime.public_dns
+    # Bind CloudFront to the Elastic IP. The instance's initial public DNS can
+    # retain the launch-time ephemeral address after the EIP is associated.
+    domain_name = aws_eip.runtime.public_dns
     origin_id   = "ec2-runtime"
     custom_header {
       name  = "X-Realtime-Pix-Origin"

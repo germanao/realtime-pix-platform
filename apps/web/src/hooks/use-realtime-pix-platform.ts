@@ -2,7 +2,12 @@
 
 import * as signalR from "@microsoft/signalr";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, eventsHubUrl, presenceHubUrl, sendPresenceLeave } from "@/lib/api";
+import {
+  api,
+  resolveEventsHubUrl,
+  resolvePresenceHubUrl,
+  sendPresenceLeave
+} from "@/lib/api";
 import { sortRecipients, uniqueBy, validateTransferAmount } from "@/lib/presentation";
 import type {
   Account,
@@ -172,7 +177,7 @@ export function useRealtimePixPlatform() {
 
       try {
         const connection = new signalR.HubConnectionBuilder()
-          .withUrl(presenceHubUrl)
+          .withUrl(await resolvePresenceHubUrl())
           .withAutomaticReconnect()
           .build();
 
@@ -248,7 +253,7 @@ export function useRealtimePixPlatform() {
 
     async function connectEvents() {
       const connection = new signalR.HubConnectionBuilder()
-        .withUrl(eventsHubUrl)
+        .withUrl(await resolveEventsHubUrl())
         .withAutomaticReconnect()
         .build();
 
