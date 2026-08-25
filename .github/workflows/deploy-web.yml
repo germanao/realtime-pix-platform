@@ -32,7 +32,7 @@ jobs:
         run: |
           npx vercel link --yes --project "$VERCEL_PROJECT_NAME" --token "$VERCEL_API_TOKEN"
           npx vercel env rm NEXT_PUBLIC_AWS_RUNTIME_URL production --yes --token "$VERCEL_API_TOKEN" >/dev/null 2>&1 || true
-          printf '%s\n' "$AWS_RUNTIME_URL" | npx vercel env add NEXT_PUBLIC_AWS_RUNTIME_URL production --token "$VERCEL_API_TOKEN"
+          printf '%s\n' "$AWS_RUNTIME_URL" | npx vercel env add NEXT_PUBLIC_AWS_RUNTIME_URL production --no-sensitive --token "$VERCEL_API_TOKEN"
 
       - name: Publish the production web application
         working-directory: apps/web
