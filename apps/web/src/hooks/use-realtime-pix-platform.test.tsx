@@ -2,10 +2,10 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpError } from "@/lib/startup";
 
-const mocks = vi.hoisted(() => ({ api: vi.fn(), prepare: vi.fn(), start: vi.fn(), leave: vi.fn() }));
+const mocks = vi.hoisted(() => ({ api: vi.fn(), prepare: vi.fn(), start: vi.fn(), leave: vi.fn(), awake: vi.fn(), reset: vi.fn() }));
 vi.mock("@/lib/api", () => ({
   api: mocks.api, prepareRuntime: mocks.prepare, resolveEventsHubUrl: async () => "https://demo/events/hub",
-  keepRuntimeAwake: async () => undefined, sendPresenceLeave: mocks.leave, resetRuntimeToAzure: vi.fn()
+  keepRuntimeAwake: mocks.awake, sendPresenceLeave: mocks.leave, resetRuntimeToAzure: mocks.reset
 }));
 vi.mock("@microsoft/signalr", () => ({
   HubConnectionState: { Disconnected: "disconnected" },
@@ -26,6 +26,7 @@ beforeEach(() => {
   localStorage.clear();
   mocks.start.mockResolvedValue(undefined);
   mocks.prepare.mockResolvedValue(undefined);
+  mocks.awake.mockResolvedValue(undefined);
   mocks.api.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === "/sessions/anonymous") {
       const { clientId } = JSON.parse(init?.body as string);
@@ -77,5 +78,19 @@ it("keeps the session usable and retries an initial live-connection failure", as
   expect(hook.result.current.error).toBeNull();
   expect(mocks.start).toHaveBeenCalledTimes(2);
   expect(hook.result.current.connectionState).toBe("connected");
+  hook.unmount();
+});
+
+it("uses a new lease when the AWS allowance triggers an Azure rebind", async () => {
+  mocks.awake.mockRejectedValueOnce(new HttpError("daily limit", 409)).mockResolvedValue(undefined);
+  const hook = renderHook(() => useRealtimePixPlatform());
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(mocks.reset).toHaveBeenCalledTimes(1);
+  const joins = mocks.api.mock.calls.filter(([path]) => path === "/sessions/anonymous")
+    .map(([, init]) => JSON.parse(init.body));
+  expect(joins).toHaveLength(2);
+  expect(joins[0].clientId).toBe(joins[1].clientId);
+  expect(joins[0].tabId).not.toBe(joins[1].tabId);
   hook.unmount();
 });

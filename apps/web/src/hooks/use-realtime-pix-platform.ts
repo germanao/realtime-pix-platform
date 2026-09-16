@@ -215,6 +215,9 @@ export function useRealtimePixPlatform() {
           if (failure instanceof HttpError && failure.status === 409 && !controller.signal.aborted) {
             // A controlled rebind closes the old hub before creating the Azure session.
             resetRuntimeToAzure();
+            // The old tab lease can finish leaving after the new runtime joins.
+            // Give the replacement a different lease so a late beacon cannot remove it.
+            tabIdRef.current = crypto.randomUUID();
             sessionRef.current = null;
             setSession(null);
             setStartupAttempt((attempt) => attempt + 1);
