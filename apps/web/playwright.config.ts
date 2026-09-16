@@ -4,6 +4,7 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
   workers: 1,
+  timeout: 420_000,
   reporter: "list",
   use: {
     ...devices["Desktop Chrome"],

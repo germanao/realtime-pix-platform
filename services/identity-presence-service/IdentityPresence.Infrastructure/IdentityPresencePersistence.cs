@@ -69,6 +69,7 @@ public sealed class PresenceConnectionEntity
 
     public string UserId { get; set; } = string.Empty;
 
+    // Last lease renewal. Keep the existing column to allow a rolling deployment without DDL.
     public DateTimeOffset ConnectedAt { get; set; }
 }
 
@@ -119,10 +120,16 @@ public sealed class EfPresenceStore(IdentityPresenceDbContext dbContext) : IPres
         else
         {
             existingConnection.UserId = user.UserId;
+            existingConnection.ConnectedAt = DateTimeOffset.UtcNow;
         }
 
-        var session = CreateSession(user, normalizedClientId);
-        dbContext.Sessions.Add(session);
+        var session = await dbContext.Sessions.FirstOrDefaultAsync(
+            item => item.ClientId == normalizedClientId, cancellationToken);
+        if (session is null)
+        {
+            session = CreateSession(user, normalizedClientId);
+            dbContext.Sessions.Add(session);
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var response = await ToResponseAsync(user, cancellationToken);
@@ -134,7 +141,7 @@ public sealed class EfPresenceStore(IdentityPresenceDbContext dbContext) : IPres
             await GetActiveUsersAsync(cancellationToken));
     }
 
-    public async Task<PresenceUserResponse?> HeartbeatAsync(string userId, CancellationToken cancellationToken)
+    public async Task<PresenceUserResponse?> HeartbeatAsync(string userId, CancellationToken cancellationToken, string? connectionId = null)
     {
         await EnsureBotsAsync(cancellationToken);
         var user = await dbContext.Users.SingleOrDefaultAsync(item => item.UserId == userId, cancellationToken);
@@ -143,7 +150,12 @@ public sealed class EfPresenceStore(IdentityPresenceDbContext dbContext) : IPres
             return null;
         }
 
+        var connections = await dbContext.Connections
+            .Where(item => item.UserId == userId && (connectionId == null || item.ConnectionId == connectionId))
+            .ToArrayAsync(cancellationToken);
+        if (connections.Length == 0) return null;
         user.LastSeenAt = DateTimeOffset.UtcNow;
+        foreach (var connection in connections) connection.ConnectedAt = user.LastSeenAt;
         await dbContext.SaveChangesAsync(cancellationToken);
         return await ToResponseAsync(user, cancellationToken);
     }
@@ -166,7 +178,7 @@ public sealed class EfPresenceStore(IdentityPresenceDbContext dbContext) : IPres
         else
         {
             var connection = await dbContext.Connections.FindAsync([connectionId], cancellationToken);
-            if (connection is not null)
+            if (connection is not null && connection.UserId == userId)
             {
                 dbContext.Connections.Remove(connection);
             }
@@ -190,7 +202,9 @@ public sealed class EfPresenceStore(IdentityPresenceDbContext dbContext) : IPres
     {
         await EnsureBotsAsync(cancellationToken);
         var users = await dbContext.Users.AsNoTracking().ToArrayAsync(cancellationToken);
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-2);
         var connectionCounts = await dbContext.Connections
+            .Where(item => item.ConnectedAt > cutoff)
             .GroupBy(item => item.UserId)
             .Select(group => new { UserId = group.Key, Count = group.Count() })
             .ToDictionaryAsync(item => item.UserId, item => item.Count, StringComparer.OrdinalIgnoreCase, cancellationToken);
@@ -258,7 +272,9 @@ public sealed class EfPresenceStore(IdentityPresenceDbContext dbContext) : IPres
     private async Task<bool> IsOnlineAsync(string userId, CancellationToken cancellationToken)
     {
         var user = await dbContext.Users.AsNoTracking().SingleOrDefaultAsync(item => item.UserId == userId, cancellationToken);
-        return user?.IsBot == true || await dbContext.Connections.AnyAsync(item => item.UserId == userId, cancellationToken);
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-2);
+        return user?.IsBot == true || await dbContext.Connections.AnyAsync(
+            item => item.UserId == userId && item.ConnectedAt > cutoff, cancellationToken);
     }
 
     private async Task<PresenceUserResponse> ToResponseAsync(PresenceUserEntity user, CancellationToken cancellationToken)

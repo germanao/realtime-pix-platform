@@ -151,9 +151,13 @@ resource "aws_instance" "runtime" {
   }
 
   tags = { Name = local.name }
-}
 
-data "aws_caller_identity" "current" {}
+  lifecycle {
+    # AMI rollouts need an explicit host migration. Bootstrap updates use SSM;
+    # changing the moving AL2023 alias must never replace the demo data disk.
+    ignore_changes = [ami, user_data]
+  }
+}
 
 resource "aws_eip" "runtime" {
   domain = "vpc"
@@ -191,6 +195,31 @@ resource "aws_cloudfront_distribution" "runtime" {
   is_ipv6_enabled = true
   comment         = local.name
   price_class     = "PriceClass_100"
+
+  origin {
+    domain_name = trimsuffix(trimprefix(aws_lambda_function_url.controller.function_url, "https://"), "/")
+    origin_id   = "wake-controller"
+    custom_header {
+      name  = "X-Realtime-Pix-Origin"
+      value = random_password.origin_header.result
+    }
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  ordered_cache_behavior {
+    path_pattern             = "/runtime/wake"
+    target_origin_id         = "wake-controller"
+    viewer_protocol_policy   = "https-only"
+    allowed_methods          = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods           = ["GET", "HEAD", "OPTIONS"]
+    cache_policy_id          = aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.except_host.id
+  }
 
   origin {
     # Bind CloudFront to the Elastic IP. The instance's initial public DNS can
@@ -251,6 +280,7 @@ resource "aws_iam_role_policy" "scheduler" {
 }
 
 resource "aws_scheduler_schedule" "start" {
+  state                        = "DISABLED"
   name                         = "${local.name}-weekday-start"
   schedule_expression          = "cron(40 8 ? * MON-FRI *)"
   schedule_expression_timezone = "America/Sao_Paulo"
@@ -267,6 +297,7 @@ resource "aws_scheduler_schedule" "start" {
 }
 
 resource "aws_scheduler_schedule" "stop" {
+  state                        = "DISABLED"
   name                         = "${local.name}-weekday-stop"
   schedule_expression          = "cron(10 15 ? * MON-FRI *)"
   schedule_expression_timezone = "America/Sao_Paulo"

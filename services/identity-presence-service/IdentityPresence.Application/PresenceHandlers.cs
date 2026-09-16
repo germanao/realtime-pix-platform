@@ -49,19 +49,16 @@ public sealed class ConnectAnonymousHandler(
 
 public sealed class HeartbeatPresenceHandler(
     IPresenceStore store,
-    IPresenceEventPublisher events,
     IPresenceTransaction transaction)
 {
-    public async Task<PresenceUserResponse?> HandleAsync(string userId, CancellationToken cancellationToken)
+    public async Task<PresenceUserResponse?> HandleAsync(string userId, CancellationToken cancellationToken, string? connectionId = null)
     {
         PresenceUserResponse? user = null;
         await transaction.ExecuteAsync(async innerCancellationToken =>
         {
-            user = await store.HeartbeatAsync(userId, innerCancellationToken);
-            if (user is not null)
-            {
-                await events.PresenceChangedAsync(user, true, innerCancellationToken);
-            }
+            // Lease renewal is not a presence transition. Broadcasting every heartbeat
+            // needlessly consumes the free SignalR daily message allowance.
+            user = await store.HeartbeatAsync(userId, innerCancellationToken, connectionId);
         }, cancellationToken);
 
         return user;

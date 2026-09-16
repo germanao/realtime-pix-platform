@@ -30,3 +30,5 @@ infra/data/
 *.user
 *.suo
 *.log
+*.tsbuildinfo
+__pycache__/

@@ -6,7 +6,7 @@ public interface IPresenceStore
 
     Task<PresenceJoinResult> ConnectAnonymousAsync(string? clientId, string connectionId, CancellationToken cancellationToken);
 
-    Task<PresenceUserResponse?> HeartbeatAsync(string userId, CancellationToken cancellationToken);
+    Task<PresenceUserResponse?> HeartbeatAsync(string userId, CancellationToken cancellationToken, string? connectionId = null);
 
     Task<PresenceLeaveResult?> LeaveAsync(string userId, string? connectionId, CancellationToken cancellationToken);
 

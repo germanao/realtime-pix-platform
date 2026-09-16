@@ -5,9 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   resolveEventsHubUrl,
-  resolvePresenceHubUrl,
+  prepareRuntime,
+  keepRuntimeAwake,
+  resetRuntimeToAzure,
   sendPresenceLeave
 } from "@/lib/api";
+import { HttpError, pause, retryStartup } from "@/lib/startup";
 import { sortRecipients, uniqueBy, validateTransferAmount } from "@/lib/presentation";
 import type {
   Account,
@@ -21,21 +24,6 @@ import type {
   Transfer,
   WalletBootstrap
 } from "@/lib/types";
-
-const presenceJoinTimeoutMs = 8_000;
-
-function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  let timeoutId: number | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
-  });
-
-  return Promise.race([operation, timeout]).finally(() => {
-    if (timeoutId !== undefined) {
-      window.clearTimeout(timeoutId);
-    }
-  });
-}
 
 export function useRealtimePixPlatform() {
   const [session, setSession] = useState<Session | null>(null);
@@ -58,8 +46,11 @@ export function useRealtimePixPlatform() {
   const [isSending, setIsSending] = useState(false);
   const [connectionState, setConnectionState] = useState("connecting");
   const [replayKey, setReplayKey] = useState(0);
+  const [startupAttempt, setStartupAttempt] = useState(0);
+  const [startupStatus, setStartupStatus] = useState("Starting demo…");
+  const retryJoin = useCallback(() => setStartupAttempt((attempt) => attempt + 1), []);
 
-  const presenceConnectionRef = useRef<signalR.HubConnection | null>(null);
+  const tabIdRef = useRef<string | null>(null);
   const eventsConnectionRef = useRef<signalR.HubConnection | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const selectedAccountIdRef = useRef("");
@@ -117,9 +108,9 @@ export function useRealtimePixPlatform() {
   );
 
   const bootstrapWallet = useCallback(
-    async (nextSession: Session) => {
+    async (nextSession: Session, signal?: AbortSignal) => {
       await api<WalletBootstrap>(`/wallet/users/${encodeURIComponent(nextSession.userId)}/bootstrap`, {
-        method: "POST"
+        method: "POST", signal
       });
       await loadAccounts(nextSession.userId, selectedAccountIdRef.current);
     },
@@ -151,109 +142,107 @@ export function useRealtimePixPlatform() {
   }, [loadAccounts]);
 
   useEffect(() => {
-    let cancelled = false;
-    let pageHideHandler: (() => void) | null = null;
-
-    const acceptSession = async (nextSession: Session) => {
-      if (cancelled) {
-        return;
-      }
-      localStorage.setItem("realtime-pix:clientId", nextSession.clientId);
-      sessionRef.current = nextSession;
-      setSession(nextSession);
-      await bootstrapWallet(nextSession);
-    };
+    const controller = new AbortController();
+    const { signal } = controller;
+    // Persist before any network request: reloading a cold page must not mint another identity.
+    const clientId = localStorage.getItem("realtime-pix:clientId") ?? crypto.randomUUID();
+    localStorage.setItem("realtime-pix:clientId", clientId);
+    tabIdRef.current ??= crypto.randomUUID();
+    const tabId = tabIdRef.current;
 
     async function join() {
-      const clientId = localStorage.getItem("realtime-pix:clientId") ?? crypto.randomUUID();
-      const cachedAccounts = localStorage.getItem("realtime-pix:lastAccounts");
-      if (cachedAccounts) {
-        try {
-          setAccounts(JSON.parse(cachedAccounts) as Account[]);
-        } catch {
-          localStorage.removeItem("realtime-pix:lastAccounts");
-        }
-      }
-
+      setLoading(true);
+      setError(null);
       try {
-        const connection = new signalR.HubConnectionBuilder()
-          .withUrl(await resolvePresenceHubUrl())
-          .withAutomaticReconnect()
-          .build();
-
-        presenceConnectionRef.current = connection;
-        connection.on("presence.snapshot", (snapshot: PresenceUser[]) => {
-          setUsers(uniqueBy(snapshot, (user) => user.userId));
-        });
-        connection.onreconnecting(() => setConnectionState("reconnecting"));
-        connection.onreconnected(async () => {
-          setConnectionState("connected");
-          const nextSession = await connection.invoke<Session>("Join", { clientId });
-          await acceptSession(nextSession);
-        });
-        connection.onclose(() => setConnectionState("disconnected"));
-
-        await withTimeout(
-          connection.start(),
-          presenceJoinTimeoutMs,
-          "The live presence connection timed out."
-        );
-        setConnectionState("connected");
-        const nextSession = await withTimeout(
-          connection.invoke<Session>("Join", { clientId }),
-          presenceJoinTimeoutMs,
-          "The live presence join timed out."
-        );
-        await acceptSession(nextSession);
-
-        pageHideHandler = () => {
-          const current = sessionRef.current;
-          if (current) {
-            sendPresenceLeave(current.userId, connection.connectionId);
-          }
-        };
-        window.addEventListener("pagehide", pageHideHandler);
+        await prepareRuntime(signal, setStartupStatus);
+        signal.throwIfAborted();
+        setStartupStatus("Joining the demo…");
+        const nextSession = await retryStartup(() => api<Session>("/sessions/anonymous", {
+          method: "POST", body: JSON.stringify({ clientId, tabId }), signal
+        }), signal);
+        signal.throwIfAborted();
+        sessionRef.current = nextSession;
+        setSession(nextSession);
+        setConnectionState("polling");
+        setStartupStatus("Preparing your accounts…");
+        // Bootstrap is idempotent. A slow bank must not repeat session creation.
+        await retryStartup(() => bootstrapWallet(nextSession, signal), signal);
+        signal.throwIfAborted();
+        setStartupStatus("");
+        void refresh().catch(() => undefined);
       } catch (joinError) {
-        await presenceConnectionRef.current?.stop().catch(() => undefined);
-        try {
-          const nextSession = await api<Session>("/sessions/anonymous", {
-            method: "POST",
-            body: JSON.stringify({ clientId })
-          });
-          await acceptSession(nextSession);
-          setConnectionState("http fallback");
-        } catch {
-          setError(joinError instanceof Error ? joinError.message : "Could not join the room.");
-          setConnectionState("disconnected");
+        if (!signal.aborted) {
+          setError(joinError instanceof Error ? joinError.message : "Could not start the demo.");
+          setStartupStatus("Startup needs another attempt.");
         }
       } finally {
-        setLoading(false);
+        if (!signal.aborted) setLoading(false);
       }
     }
 
     void join();
-    return () => {
-      cancelled = true;
-      if (pageHideHandler) {
-        window.removeEventListener("pagehide", pageHideHandler);
-      }
-      const current = sessionRef.current;
-      const connection = presenceConnectionRef.current;
-      if (current && connection) {
-        void connection
-          .invoke("Leave", { userId: current.userId, connectionId: connection.connectionId })
-          .catch(() => undefined);
-      }
-      void connection?.stop().catch(() => undefined);
-    };
-  }, [bootstrapWallet]);
+    return () => controller.abort();
+  }, [bootstrapWallet, refresh, startupAttempt]);
 
   useEffect(() => {
+    if (!session || !tabIdRef.current) return;
+    const controller = new AbortController();
+    const tabId = tabIdRef.current;
+    const connectionId = `http:${session.clientId}:${tabId}`;
+    const leave = () => sendPresenceLeave(session.userId, connectionId);
+    window.addEventListener("pagehide", leave);
+    // This renews only this tab's lease. Another tab closing must not remove this one.
+    async function heartbeat() {
+      try {
+        await api("/presence/heartbeat", {
+          method: "POST", signal: controller.signal,
+          body: JSON.stringify({ userId: session!.userId, connectionId })
+        });
+      } catch (failure) {
+        if (failure instanceof HttpError && failure.status === 404 && !controller.signal.aborted) {
+          await api("/sessions/anonymous", {
+            method: "POST", signal: controller.signal,
+            body: JSON.stringify({ clientId: session!.clientId, tabId })
+          }).catch(() => undefined);
+        }
+      }
+    }
+    async function maintain() {
+      while (!controller.signal.aborted) {
+        await heartbeat();
+        try { await keepRuntimeAwake(controller.signal); }
+        catch (failure) {
+          if (failure instanceof HttpError && failure.status === 409 && !controller.signal.aborted) {
+            // A controlled rebind closes the old hub before creating the Azure session.
+            resetRuntimeToAzure();
+            sessionRef.current = null;
+            setSession(null);
+            setStartupAttempt((attempt) => attempt + 1);
+            return;
+          }
+        }
+        await pause(30_000, controller.signal);
+      }
+    }
+    void maintain().catch(() => undefined);
+    return () => {
+      controller.abort();
+      window.removeEventListener("pagehide", leave);
+      leave();
+    };
+  }, [session?.userId]);
+
+  useEffect(() => {
+    if (!session) return;
     let cancelled = false;
+    const controller = new AbortController();
+    let connection: signalR.HubConnection | undefined;
 
     async function connectEvents() {
-      const connection = new signalR.HubConnectionBuilder()
-        .withUrl(await resolveEventsHubUrl())
+      const hubUrl = await resolveEventsHubUrl();
+      if (cancelled) return;
+      connection = new signalR.HubConnectionBuilder()
+        .withUrl(hubUrl, { timeout: 15_000 })
         .withAutomaticReconnect()
         .build();
 
@@ -262,6 +251,11 @@ export function useRealtimePixPlatform() {
         setTimeline(uniqueBy(snapshot, (item) => item.eventId));
       });
       connection.on("events.timelineItem", (item: TimelineEvent) => {
+        if (item.eventType.startsWith("PresenceChanged.") || item.eventType.startsWith("UserJoined.")) {
+          void api<PresenceUser[]>("/presence/users")
+            .then((snapshot) => setUsers(uniqueBy(snapshot, (user) => user.userId)))
+            .catch(() => undefined);
+        }
         setTimeline((current) =>
           uniqueBy([item, ...current], (event) => event.eventId).slice(0, 250)
         );
@@ -297,22 +291,48 @@ export function useRealtimePixPlatform() {
         setFlow(uniqueBy(snapshot, (step) => step.sourceEventId || step.stepId));
       });
 
-      try {
-        await connection.start();
-        if (cancelled) {
-          await connection.stop();
+      const hub = connection;
+      let starting = false;
+      const subscribe = async () => {
+        if (transferIdRef.current) await hub.invoke("SubscribeTransfer", transferIdRef.current);
+      };
+      async function start() {
+        if (cancelled || starting || hub.state !== signalR.HubConnectionState.Disconnected) return;
+        starting = true;
+        try {
+          await retryStartup(async () => {
+            try { await hub.start(); }
+            catch (error) { await hub.stop().catch(() => undefined); throw error; }
+          }, controller.signal, 90_000);
+          if (cancelled) { await hub.stop(); return; }
+          setConnectionState("connected");
+          await subscribe().catch(() => undefined);
+        } catch {
+          if (!cancelled) setConnectionState("polling");
+        } finally { starting = false; }
+      }
+      hub.onreconnecting(() => { if (!cancelled) setConnectionState("polling"); });
+      hub.onreconnected(() => {
+        if (!cancelled) {
+          setConnectionState("connected");
+          void subscribe().catch(() => undefined);
         }
-      } catch (eventError) {
-        setError(eventError instanceof Error ? eventError.message : "Live updates are unavailable.");
+      });
+      hub.onclose(() => { if (!cancelled) setConnectionState("polling"); });
+      // Also retries initial failures and exhausted reconnects. HTTP remains usable throughout.
+      while (!cancelled) {
+        await start();
+        await pause(30_000, controller.signal);
       }
     }
 
-    void connectEvents();
+    void connectEvents().catch(() => undefined);
     return () => {
       cancelled = true;
-      void eventsConnectionRef.current?.stop().catch(() => undefined);
+      controller.abort();
+      void connection?.stop().catch(() => undefined);
     };
-  }, [loadAccounts]);
+  }, [loadAccounts, session?.userId]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -463,6 +483,8 @@ export function useRealtimePixPlatform() {
   }, []);
 
   return {
+    startupStatus,
+    retryJoin,
     session,
     users,
     recipients,

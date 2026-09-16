@@ -13,7 +13,7 @@ const primaryJourneyOrder = [
 ] as const;
 
 async function expectPlatformLive(page: Page) {
-  await expect(page.getByText("Live", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Live", { exact: true })).toBeVisible({ timeout: 330_000 });
 }
 
 async function expectProceduralReplay(page: Page) {
@@ -180,7 +180,7 @@ test("mobile mode uses the vertical journey without horizontal overflow", async 
   expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
 });
 
-test("presence appears and disappears immediately across two browser sessions", async ({ browser }) => {
+test("presence appears and disappears across two browser sessions", async ({ browser }) => {
   const firstContext = await browser.newContext();
   const secondContext = await browser.newContext();
   const firstPage = await firstContext.newPage();
@@ -192,16 +192,16 @@ test("presence appears and disappears immediately across two browser sessions", 
   await expectPlatformLive(secondPage);
 
   const secondIdentity = secondPage.locator(".identityDetail").first().locator("strong");
-  await expect(secondIdentity).not.toHaveText("Joining...");
+  await expect(secondIdentity).not.toHaveText("Starting demo…");
   const secondName = await secondIdentity.innerText();
   await expect(
     firstPage.getByRole("button", { name: `${secondName} Online now` })
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 20_000 });
 
   await secondContext.close();
   await expect(
     firstPage.getByRole("button", { name: `${secondName} Online now` })
-  ).toHaveCount(0);
+  ).toHaveCount(0, { timeout: 135_000 });
 
   await firstContext.close();
 });

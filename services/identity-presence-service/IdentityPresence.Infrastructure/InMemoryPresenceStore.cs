@@ -7,15 +7,17 @@ namespace IdentityPresence.Infrastructure;
 
 public sealed class InMemoryPresenceStore : IPresenceStore
 {
+    private readonly TimeProvider _clock;
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, PresenceUser> _users = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _connectionToUser = new(StringComparer.OrdinalIgnoreCase);
 
-    public InMemoryPresenceStore()
+    public InMemoryPresenceStore(TimeProvider? clock = null)
     {
+        _clock = clock ?? TimeProvider.System;
         foreach (var bot in KnownBotUsers.All)
         {
-            _users[bot.UserId] = new PresenceUser(bot.UserId, bot.DisplayName, true, DateTimeOffset.UtcNow);
+            _users[bot.UserId] = new PresenceUser(bot.UserId, bot.DisplayName, true, _clock.GetUtcNow());
         }
     }
 
@@ -24,7 +26,7 @@ public sealed class InMemoryPresenceStore : IPresenceStore
         lock (_gate)
         {
             var identity = CreateIdentity(clientId);
-            var user = UpsertUser(identity, DateTimeOffset.UtcNow);
+            var user = UpsertUser(identity, _clock.GetUtcNow());
             return Task.FromResult(ToSession(identity, user));
         }
     }
@@ -39,9 +41,9 @@ public sealed class InMemoryPresenceStore : IPresenceStore
         {
             var identity = CreateIdentity(clientId);
             var isNewUser = !_users.ContainsKey(identity.UserId);
-            var user = UpsertUser(identity, DateTimeOffset.UtcNow);
-            var wasOnline = user.IsOnline;
-            user.ConnectionIds.Add(connectionId);
+            var user = UpsertUser(identity, _clock.GetUtcNow());
+            var wasOnline = IsOnline(user);
+            user.ConnectionIds[connectionId] = _clock.GetUtcNow();
             _connectionToUser[connectionId] = user.UserId;
             var response = ToResponse(user);
             return Task.FromResult(new PresenceJoinResult(
@@ -53,7 +55,7 @@ public sealed class InMemoryPresenceStore : IPresenceStore
         }
     }
 
-    public Task<PresenceUserResponse?> HeartbeatAsync(string userId, CancellationToken cancellationToken)
+    public Task<PresenceUserResponse?> HeartbeatAsync(string userId, CancellationToken cancellationToken, string? connectionId = null)
     {
         lock (_gate)
         {
@@ -62,7 +64,10 @@ public sealed class InMemoryPresenceStore : IPresenceStore
                 return Task.FromResult<PresenceUserResponse?>(null);
             }
 
-            user.LastSeenAt = DateTimeOffset.UtcNow;
+            var ids = user.ConnectionIds.Keys.Where(id => connectionId == null || id == connectionId).ToArray();
+            if (ids.Length == 0) return Task.FromResult<PresenceUserResponse?>(null);
+            user.LastSeenAt = _clock.GetUtcNow();
+            foreach (var id in ids) user.ConnectionIds[id] = user.LastSeenAt;
             return Task.FromResult<PresenceUserResponse?>(ToResponse(user));
         }
     }
@@ -79,10 +84,10 @@ public sealed class InMemoryPresenceStore : IPresenceStore
                 return Task.FromResult<PresenceLeaveResult?>(null);
             }
 
-            var wasOnline = user.IsOnline;
+            var wasOnline = IsOnline(user);
             if (string.IsNullOrWhiteSpace(connectionId))
             {
-                foreach (var activeConnection in user.ConnectionIds)
+                foreach (var activeConnection in user.ConnectionIds.Keys)
                 {
                     _connectionToUser.Remove(activeConnection);
                 }
@@ -95,7 +100,7 @@ public sealed class InMemoryPresenceStore : IPresenceStore
                 _connectionToUser.Remove(connectionId);
             }
 
-            user.LastSeenAt = DateTimeOffset.UtcNow;
+            user.LastSeenAt = _clock.GetUtcNow();
             var response = ToResponse(user);
             return Task.FromResult<PresenceLeaveResult?>(new PresenceLeaveResult(
                 response,
@@ -153,8 +158,11 @@ public sealed class InMemoryPresenceStore : IPresenceStore
     private static AnonymousSessionResponse ToSession(AnonymousIdentity identity, PresenceUser user) =>
         new(identity.ClientId, user.UserId, user.DisplayName, Guid.NewGuid().ToString("N"), user.LastSeenAt);
 
-    private static PresenceUserResponse ToResponse(PresenceUser user) =>
-        new(user.UserId, user.DisplayName, user.IsBot, user.IsOnline, user.LastSeenAt);
+    private bool IsOnline(PresenceUser user) =>
+        user.IsBot || user.ConnectionIds.Values.Any(seen => seen > _clock.GetUtcNow().AddMinutes(-2));
+
+    private PresenceUserResponse ToResponse(PresenceUser user) =>
+        new(user.UserId, user.DisplayName, user.IsBot, IsOnline(user), user.LastSeenAt);
 
     private sealed class PresenceUser(string userId, string displayName, bool isBot, DateTimeOffset lastSeenAt)
     {
@@ -166,8 +174,6 @@ public sealed class InMemoryPresenceStore : IPresenceStore
 
         public DateTimeOffset LastSeenAt { get; set; } = lastSeenAt;
 
-        public HashSet<string> ConnectionIds { get; } = new(StringComparer.OrdinalIgnoreCase);
-
-        public bool IsOnline => IsBot || ConnectionIds.Count > 0;
+        public Dictionary<string, DateTimeOffset> ConnectionIds { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 }

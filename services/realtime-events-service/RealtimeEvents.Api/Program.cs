@@ -25,17 +25,27 @@ var signalRBuilder = builder.Services.AddSignalR();
 var azureSignalRConnectionString = builder.Configuration["AzureSignalR:ConnectionString"];
 if (!string.IsNullOrWhiteSpace(azureSignalRConnectionString))
 {
-    signalRBuilder.AddAzureSignalR(azureSignalRConnectionString);
+    signalRBuilder.AddAzureSignalR(options =>
+    {
+        options.ConnectionString = azureSignalRConnectionString;
+        options.InitialHubServerConnectionCount = 1;
+        options.MaxHubServerConnectionCount = 1;
+    });
 }
 else if (builder.Configuration["AzureSignalR:Endpoint"] is { Length: > 0 } signalREndpoint)
 {
     var clientId = builder.Configuration["AZURE_CLIENT_ID"]
         ?? throw new InvalidOperationException("AZURE_CLIENT_ID is required for Azure SignalR managed identity authentication.");
-    signalRBuilder.AddAzureSignalR(
-        $"Endpoint={signalREndpoint};AuthType=azure.msi;ClientId={clientId};Version=1.0;");
+    signalRBuilder.AddAzureSignalR(options =>
+    {
+        options.ConnectionString = $"Endpoint={signalREndpoint};AuthType=azure.msi;ClientId={clientId};Version=1.0;";
+        options.InitialHubServerConnectionCount = 1;
+        options.MaxHubServerConnectionCount = 1;
+    });
 }
 
 builder.Services.AddRealtimeEventsInfrastructure(builder.Configuration);
+builder.Services.AddSingleton<IRealtimeTransportReadinessProbe, HubTransportReadinessProbe>();
 builder.Services.AddRealtimePixEventBus(builder.Configuration, RealtimeEventsMetadata.ServiceName);
 if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Default")))
 {

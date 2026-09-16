@@ -5,6 +5,42 @@ using Xunit;
 
 public sealed class PresenceStoreTests
 {
+    private sealed class DemoClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task Abandoned_connections_expire_without_deleting_user_or_bots()
+    {
+        var clock = new DemoClock();
+        var store = new InMemoryPresenceStore(clock);
+        var joined = await store.ConnectAnonymousAsync("lease-client", "http:lease-client:tab", CancellationToken.None);
+        clock.Now = clock.Now.AddMinutes(3);
+        var active = await store.GetActiveUsersAsync(CancellationToken.None);
+        Assert.DoesNotContain(active, item => item.UserId == joined.Session.UserId);
+        Assert.Contains(active, item => item.IsBot);
+        var renewed = await store.HeartbeatAsync(joined.Session.UserId, CancellationToken.None, "http:lease-client:tab");
+        Assert.True(renewed!.IsOnline);
+    }
+
+    [Fact]
+    public async Task Heartbeat_renews_only_its_tab_and_other_tabs_can_close_independently()
+    {
+        var clock = new DemoClock();
+        var store = new InMemoryPresenceStore(clock);
+        var joined = await store.ConnectAnonymousAsync("lease-client", "tab-a", CancellationToken.None);
+        await store.ConnectAnonymousAsync("lease-client", "tab-b", CancellationToken.None);
+        clock.Now = clock.Now.AddSeconds(100);
+        await store.HeartbeatAsync(joined.Session.UserId, CancellationToken.None, "tab-b");
+        clock.Now = clock.Now.AddSeconds(30);
+        var left = await store.LeaveAsync(joined.Session.UserId, "tab-a", CancellationToken.None);
+        Assert.False(left!.BecameOffline);
+        Assert.Single(left.ActiveUsers.Where(item => !item.IsBot));
+        Assert.Null(await store.HeartbeatAsync(joined.Session.UserId, CancellationToken.None, "unknown-tab"));
+    }
+
     [Fact]
     public async Task Connecting_anonymous_user_emits_online_presence_snapshot()
     {

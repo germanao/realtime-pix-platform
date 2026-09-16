@@ -27,8 +27,6 @@ public static class DependencyInjection
             services.AddScoped<IIdentityDatabaseReadinessProbe, EfIdentityDatabaseReadinessProbe>();
         }
 
-        services.AddHttpClient<IRealtimeTransportReadinessProbe, AzureSignalRReadinessProbe>(client =>
-            client.Timeout = TimeSpan.FromSeconds(5));
         services.AddScoped<IIdentityReadinessProbe, IdentityReadinessProbe>();
         services.AddScoped<IPresenceEventPublisher, PresenceEventPublisher>();
         services.AddScoped<JoinAnonymousHandler>();

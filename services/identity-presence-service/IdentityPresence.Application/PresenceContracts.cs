@@ -1,8 +1,8 @@
 namespace IdentityPresence.Application;
 
-public sealed record AnonymousSessionRequest(string? ClientId);
+public sealed record AnonymousSessionRequest(string? ClientId, string? TabId = null);
 
-public sealed record PresenceHeartbeatRequest(string UserId);
+public sealed record PresenceHeartbeatRequest(string UserId, string? ConnectionId = null);
 
 public sealed record PresenceLeaveRequest(string UserId, string? ConnectionId);
 
