@@ -159,8 +159,6 @@ resource "aws_instance" "runtime" {
   }
 }
 
-data "aws_caller_identity" "current" {}
-
 resource "aws_eip" "runtime" {
   domain = "vpc"
   tags   = { Name = local.name }
