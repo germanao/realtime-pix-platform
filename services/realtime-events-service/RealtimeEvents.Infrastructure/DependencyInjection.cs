@@ -28,8 +28,6 @@ public static class DependencyInjection
             services.AddScoped<IRealtimeDatabaseReadinessProbe, EfRealtimeDatabaseReadinessProbe>();
         }
 
-        services.AddHttpClient<IRealtimeTransportReadinessProbe, AzureSignalRReadinessProbe>(client =>
-            client.Timeout = TimeSpan.FromSeconds(5));
         services.AddScoped<IRealtimeEventsReadinessProbe, RealtimeEventsReadinessProbe>();
         services.AddScoped<ProjectPlatformEventHandler>();
         services.AddScoped<IRealtimeProjectionNotifier, SignalRProjectionNotifier>();

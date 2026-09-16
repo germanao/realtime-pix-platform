@@ -30,7 +30,7 @@ export function AppHeader({ expertMode, onExpertModeChange, platform }: AppHeade
           <CircleUserRound size={18} />
           <span>
             <small>You are</small>
-            <strong>{platform.loading ? "Joining..." : platform.session?.displayName ?? "Visitor"}</strong>
+            <strong>{platform.session?.displayName ?? (platform.loading ? "Starting demo…" : "Visitor")}</strong>
           </span>
         </div>
         <div className="identityDetail balanceIdentity">

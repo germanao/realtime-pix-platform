@@ -167,8 +167,8 @@ cd /opt/realtime-pix
 aws ssm get-parameter --region "${aws_region}" --name "${parameter_path}/compose-env" --with-decryption \
   --query Parameter.Value --output text > .env
 chmod 600 .env
-docker compose pull
-docker compose up -d --remove-orphans
+# Image updates are a deployment operation, not a dependency of every cold boot.
+docker compose up -d --pull missing --remove-orphans
 START
 chmod +x /usr/local/sbin/realtime-pix-start
 
@@ -185,6 +185,8 @@ RemainAfterExit=yes
 ExecStart=/usr/local/sbin/realtime-pix-start
 ExecStop=/usr/bin/docker compose -f /opt/realtime-pix/docker-compose.yml down
 TimeoutStartSec=900
+Restart=on-failure
+RestartSec=15
 
 [Install]
 WantedBy=multi-user.target

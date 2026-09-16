@@ -17,6 +17,12 @@ export default function Home() {
         onExpertModeChange={setExpertMode}
         platform={platform}
       />
+      {platform.startupStatus && (
+        <div className="globalNotice" role="status" aria-live="polite">
+          <span>{platform.startupStatus} {platform.loading && "Sleeping services may take a few minutes. This page will continue automatically."}</span>
+          {!platform.loading && <button onClick={platform.retryJoin} type="button">Retry startup</button>}
+        </div>
+      )}
       {platform.error && (
         <div className="globalNotice" role="alert">
           <span>{platform.error}</span>

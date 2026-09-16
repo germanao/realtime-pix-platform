@@ -25,17 +25,27 @@ var signalRBuilder = builder.Services.AddSignalR();
 var azureSignalRConnectionString = builder.Configuration["AzureSignalR:ConnectionString"];
 if (!string.IsNullOrWhiteSpace(azureSignalRConnectionString))
 {
-    signalRBuilder.AddAzureSignalR(azureSignalRConnectionString);
+    signalRBuilder.AddAzureSignalR(options =>
+    {
+        options.ConnectionString = azureSignalRConnectionString;
+        options.InitialHubServerConnectionCount = 1;
+        options.MaxHubServerConnectionCount = 1;
+    });
 }
 else if (builder.Configuration["AzureSignalR:Endpoint"] is { Length: > 0 } signalREndpoint)
 {
     var clientId = builder.Configuration["AZURE_CLIENT_ID"]
         ?? throw new InvalidOperationException("AZURE_CLIENT_ID is required for Azure SignalR managed identity authentication.");
-    signalRBuilder.AddAzureSignalR(
-        $"Endpoint={signalREndpoint};AuthType=azure.msi;ClientId={clientId};Version=1.0;");
+    signalRBuilder.AddAzureSignalR(options =>
+    {
+        options.ConnectionString = $"Endpoint={signalREndpoint};AuthType=azure.msi;ClientId={clientId};Version=1.0;";
+        options.InitialHubServerConnectionCount = 1;
+        options.MaxHubServerConnectionCount = 1;
+    });
 }
 
 builder.Services.AddIdentityPresenceInfrastructure(builder.Configuration);
+builder.Services.AddSingleton<IRealtimeTransportReadinessProbe, HubTransportReadinessProbe>();
 builder.Services.AddRealtimePixEventBus(builder.Configuration, IdentityPresenceMetadata.ServiceName);
 if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Default")))
 {
@@ -77,13 +87,17 @@ app.MapPost("/sessions/anonymous", async (
     PresenceBroadcaster broadcaster,
     CancellationToken cancellationToken) =>
 {
-    // This endpoint is the browser fallback when a websocket transport is
-    // unavailable. Give it a stable synthetic connection so fallback users are
-    // represented in the same presence projection as SignalR users.
+    // Idempotent browser identity with a separate, renewable lease for each tab.
     var clientId = string.IsNullOrWhiteSpace(request.ClientId)
         ? Guid.NewGuid().ToString("N")
         : request.ClientId.Trim();
-    var result = await handler.HandleAsync(clientId, $"http:{clientId}", cancellationToken);
+    if (clientId.Length > 100 || request.TabId?.Length > 36)
+    {
+        return Results.BadRequest(new { message = "Invalid client or tab identifier." });
+    }
+    var connectionId = string.IsNullOrWhiteSpace(request.TabId)
+        ? $"http:{clientId}" : $"http:{clientId}:{request.TabId}";
+    var result = await handler.HandleAsync(clientId, connectionId, cancellationToken);
     var broadcast = broadcaster.BroadcastSnapshotAsync(result.ActiveUsers, CancellationToken.None);
     _ = broadcast.ContinueWith(static _ => { }, TaskContinuationOptions.OnlyOnFaulted);
     return Results.Ok(result.Session);
@@ -94,7 +108,7 @@ app.MapPost("/presence/heartbeat", async (
     HeartbeatPresenceHandler handler,
     CancellationToken cancellationToken) =>
 {
-    var user = await handler.HandleAsync(request.UserId, cancellationToken);
+    var user = await handler.HandleAsync(request.UserId, cancellationToken, request.ConnectionId);
     return user is null
         ? Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Unknown user")
         : Results.Ok(user);

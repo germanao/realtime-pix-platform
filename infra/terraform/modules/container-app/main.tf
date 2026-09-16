@@ -90,12 +90,25 @@ resource "azurerm_container_app" "this" {
         }
       }
 
+      dynamic "startup_probe" {
+        for_each = var.probes_enabled ? [1] : []
+        content {
+          transport               = "HTTP"
+          port                    = 8080
+          path                    = "/health/live"
+          interval_seconds        = 5
+          timeout                 = 3
+          failure_count_threshold = 36
+        }
+      }
+
       dynamic "liveness_probe" {
         for_each = var.probes_enabled ? [1] : []
         content {
           transport = "HTTP"
           port      = 8080
           path      = "/health/live"
+          timeout   = 3
         }
       }
 
@@ -104,7 +117,12 @@ resource "azurerm_container_app" "this" {
         content {
           transport = "HTTP"
           port      = 8080
-          path      = "/health/ready"
+          # Deep dependency readiness is polled by the startup client, not used
+          # to remove a healthy proxy from ingress while downstreams are waking.
+          path                    = "/health/live"
+          interval_seconds        = 5
+          timeout                 = 3
+          success_count_threshold = 1
         }
       }
     }
