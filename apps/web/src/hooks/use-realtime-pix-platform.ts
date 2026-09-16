@@ -251,6 +251,11 @@ export function useRealtimePixPlatform() {
         setTimeline(uniqueBy(snapshot, (item) => item.eventId));
       });
       connection.on("events.timelineItem", (item: TimelineEvent) => {
+        if (item.eventType.startsWith("PresenceChanged.") || item.eventType.startsWith("UserJoined.")) {
+          void api<PresenceUser[]>("/presence/users")
+            .then((snapshot) => setUsers(uniqueBy(snapshot, (user) => user.userId)))
+            .catch(() => undefined);
+        }
         setTimeline((current) =>
           uniqueBy([item, ...current], (event) => event.eventId).slice(0, 250)
         );
