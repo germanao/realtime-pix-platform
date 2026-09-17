@@ -19,84 +19,10 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
   packages: write
 
 jobs:
-  configure-azure-access:
-    name: Configure Azure access for the AWS runtime
-    runs-on: ubuntu-latest
-    environment: poc
-    env:
-      RESOURCE_GROUP: rg-realtime-pix-poc
-      POSTGRES_SERVER: pg-realtime-pix-poc-087fe387
-      AWS_RUNTIME_EIP: 18.224.222.187
-      AWS_RUNTIME_ROLE: sp-realtime-pix-aws-poc
-      AWS_RUNTIME_OBJECT_ID: 574cd50c-de82-4ea8-aa75-b7e9d27efd33
-    steps:
-      - name: Sign in with the PostgreSQL administrator identity
-        uses: azure/login@v3
-        with:
-          client-id: ${{ vars.AZURE_APPLY_CLIENT_ID || vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Allow the fixed AWS origin IP
-        shell: bash
-        run: |
-          az postgres flexible-server firewall-rule create \
-            --resource-group "$RESOURCE_GROUP" \
-            --server-name "$POSTGRES_SERVER" \
-            --name AllowAwsRuntime \
-            --start-ip-address "$AWS_RUNTIME_EIP" \
-            --end-ip-address "$AWS_RUNTIME_EIP" \
-            --only-show-errors \
-            --output none
-
-      - name: Install PostgreSQL client
-        shell: bash
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-
-      - name: Grant the AWS runtime access to the five service databases
-        shell: bash
-        run: |
-          PGHOST="$(az postgres flexible-server show \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$POSTGRES_SERVER" \
-            --query fullyQualifiedDomainName \
-            --output tsv)"
-          PGADMIN_USER="$(az postgres flexible-server microsoft-entra-admin list \
-            --resource-group "$RESOURCE_GROUP" \
-            --server-name "$POSTGRES_SERVER" \
-            --query '[0].principalName' \
-            --output tsv)"
-          ENTRA_TOKEN="$(az account get-access-token --resource-type oss-rdbms --query accessToken --output tsv)"
-
-          PGPASSWORD="$ENTRA_TOKEN" psql \
-            "host=$PGHOST port=5432 dbname=postgres user=$PGADMIN_USER sslmode=require" \
-            -v ON_ERROR_STOP=1 \
-            -v role_name="$AWS_RUNTIME_ROLE" \
-            -v object_id="$AWS_RUNTIME_OBJECT_ID" <<'SQL'
-          SELECT pg_catalog.pgaadauth_create_principal_with_oid(
-            :'role_name',
-            :'object_id',
-            'service',
-            false,
-            false
-          )
-          WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'role_name');
-
-          GRANT "id-realtime-pix-identity-presence-poc-087fe387" TO :"role_name";
-          GRANT "id-realtime-pix-bank-a-poc-087fe387" TO :"role_name";
-          GRANT "id-realtime-pix-bank-b-poc-087fe387" TO :"role_name";
-          GRANT "id-realtime-pix-transaction-poc-087fe387" TO :"role_name";
-          GRANT "id-realtime-pix-realtime-events-poc-087fe387" TO :"role_name";
-
-          SELECT rolname FROM pg_roles WHERE rolname = :'role_name';
-          SQL
-
   publish:
-    needs: configure-azure-access
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -112,6 +38,8 @@ jobs:
             dockerfile: services/transaction-service/Dockerfile
           - repository: realtime-events-service
             dockerfile: services/realtime-events-service/Dockerfile
+          - repository: bot-service
+            dockerfile: services/bot-service/Dockerfile
     steps:
       - uses: actions/checkout@v6
       - name: Sign in to GHCR
@@ -125,4 +53,6 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/realtime-pix-${{ matrix.repository }}:aws-latest
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/realtime-pix-${{ matrix.repository }}:aws-latest
+            ghcr.io/${{ github.repository_owner }}/realtime-pix-${{ matrix.repository }}:aws-${{ github.sha }}

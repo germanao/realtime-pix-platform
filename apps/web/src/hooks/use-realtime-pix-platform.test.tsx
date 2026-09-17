@@ -5,7 +5,7 @@ import { HttpError } from "@/lib/startup";
 const mocks = vi.hoisted(() => ({ api: vi.fn(), prepare: vi.fn(), start: vi.fn(), leave: vi.fn(), awake: vi.fn(), reset: vi.fn() }));
 vi.mock("@/lib/api", () => ({
   api: mocks.api, prepareRuntime: mocks.prepare, resolveEventsHubUrl: async () => "https://demo/events/hub",
-  keepRuntimeAwake: mocks.awake, sendPresenceLeave: mocks.leave, resetRuntimeToAzure: mocks.reset
+  keepRuntimeAwake: mocks.awake, sendPresenceLeave: mocks.leave, resetRuntime: mocks.reset
 }));
 vi.mock("@microsoft/signalr", () => ({
   HubConnectionState: { Disconnected: "disconnected" },
@@ -81,7 +81,7 @@ it("keeps the session usable and retries an initial live-connection failure", as
   hook.unmount();
 });
 
-it("uses a new lease when the AWS allowance triggers an Azure rebind", async () => {
+it("uses a new lease when the AWS allowance resets the startup session", async () => {
   mocks.awake.mockRejectedValueOnce(new HttpError("daily limit", 409)).mockResolvedValue(undefined);
   const hook = renderHook(() => useRealtimePixPlatform());
   await act(() => vi.advanceTimersByTimeAsync(0));

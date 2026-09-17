@@ -85,6 +85,16 @@ resource "aws_iam_role_policy" "runtime" {
         Effect   = "Allow"
         Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
         Resource = "arn:aws:ssm:${var.aws_region}:*:parameter${local.runtime_param_path}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "arn:aws:s3:::realtime-pix-tfstate-886781461608/backups/aws-only/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ssm:PutParameter"]
+        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter${local.runtime_param_path}/aws-only-env"
       }
     ]
   })
@@ -136,13 +146,15 @@ resource "aws_instance" "runtime" {
     parameter_path      = local.runtime_param_path
     origin_header       = random_password.origin_header.result
     allowed_cors_origin = var.allowed_cors_origin
+    compose_base64      = base64encode(file("${path.module}/compose.aws.yml"))
   })
 
   root_block_device {
-    volume_type           = "gp3"
-    volume_size           = 20
-    encrypted             = true
-    delete_on_termination = true
+    volume_type = "gp3"
+    volume_size = 20
+    encrypted   = true
+    # The AWS-only host now owns persistent demo databases.
+    delete_on_termination = false
   }
 
   metadata_options {

@@ -33,6 +33,10 @@ jobs:
           npx vercel link --yes --project "$VERCEL_PROJECT_NAME" --token "$VERCEL_API_TOKEN"
           npx vercel env rm NEXT_PUBLIC_AWS_RUNTIME_URL production --yes --token "$VERCEL_API_TOKEN" >/dev/null 2>&1 || true
           printf '%s\n' "$AWS_RUNTIME_URL" | npx vercel env add NEXT_PUBLIC_AWS_RUNTIME_URL production --no-sensitive --token "$VERCEL_API_TOKEN"
+          # Retire stale Azure build-time endpoints after the AWS-only cutover.
+          for key in NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_PRESENCE_HUB_URL NEXT_PUBLIC_EVENTS_HUB_URL; do
+            npx vercel env rm "$key" production --yes --token "$VERCEL_API_TOKEN" >/dev/null 2>&1 || true
+          done
 
       - name: Publish the production web application
         working-directory: apps/web
