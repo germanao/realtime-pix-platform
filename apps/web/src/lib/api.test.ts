@@ -53,16 +53,14 @@ describe("runtime selection", () => {
     expect(urls).toEqual(["https://aws.example/runtime/wake", "https://aws.example/health/ready", "https://aws.example/presence/users"]);
   });
 
-  it("selects Azure when AWS daily runtime is exhausted", async () => {
+  it("reports the daily limit without contacting the retired Azure runtime", async () => {
     vi.stubEnv("NEXT_PUBLIC_AWS_RUNTIME_URL", "https://aws.example");
     vi.stubGlobal("fetch", vi.fn().mockImplementation((url: string) => Promise.resolve(
       url.endsWith("/runtime/wake") ? new Response("{}", { status: 409 }) : jsonResponse({ status: "ready" })
     )));
     const runtime = await import("./api");
-    await runtime.prepareRuntime(new AbortController().signal, vi.fn());
-    expect(await runtime.resolveEventsHubUrl()).toBe("http://localhost:5104/events/hub");
-    await runtime.api("/presence/users");
-    expect(vi.mocked(fetch).mock.lastCall?.[0]).toBe("http://localhost:5100/presence/users");
+    await expect(runtime.prepareRuntime(new AbortController().signal, vi.fn())).rejects.toThrow("six-hour demo allowance");
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("shares one in-flight startup across callers", async () => {
@@ -73,6 +71,6 @@ describe("runtime selection", () => {
     const second = runtime.prepareRuntime(controller.signal, vi.fn());
     expect(first).toBe(second);
     await first;
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

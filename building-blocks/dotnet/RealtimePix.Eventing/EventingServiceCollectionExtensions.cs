@@ -16,6 +16,26 @@ public static class EventingServiceCollectionExtensions
             return services.AddRealtimePixServiceBusEventBus(configuration, consumerName);
         }
 
+        if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+        {
+            services.Configure<PostgresEventBusOptions>(configuration.GetSection("EventBus"));
+            services.PostConfigure<PostgresEventBusOptions>(options => options.ConsumerName = consumerName);
+            // Preserve inbox consumer keys from the previous transport at cutover.
+            services.Configure<ServiceBusEventBusOptions>(configuration.GetSection("EventBus:ServiceBus"));
+            services.PostConfigure<ServiceBusEventBusOptions>(options =>
+            {
+                options.QueueName ??= configuration["EventBus:QueueName"];
+                options.SubscriptionName ??= consumerName;
+            });
+            services.AddSingleton<PostgresEventBus>();
+            services.AddSingleton<IIntegrationEventPublisher>(sp => sp.GetRequiredService<PostgresEventBus>());
+            services.AddSingleton<IIntegrationMessagePublisher>(sp => sp.GetRequiredService<PostgresEventBus>());
+            services.AddSingleton<IIntegrationEnvelopeTransport>(sp => sp.GetRequiredService<PostgresEventBus>());
+            services.AddSingleton<IEventBusReadinessProbe>(sp => sp.GetRequiredService<PostgresEventBus>());
+            services.AddHostedService<PostgresEventBusWorker>();
+            return services;
+        }
+
         return services.AddRealtimePixFileEventBus(configuration, consumerName);
     }
 

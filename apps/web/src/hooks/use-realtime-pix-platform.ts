@@ -7,7 +7,7 @@ import {
   resolveEventsHubUrl,
   prepareRuntime,
   keepRuntimeAwake,
-  resetRuntimeToAzure,
+  resetRuntime,
   sendPresenceLeave
 } from "@/lib/api";
 import { HttpError, pause, retryStartup } from "@/lib/startup";
@@ -213,8 +213,8 @@ export function useRealtimePixPlatform() {
         try { await keepRuntimeAwake(controller.signal); }
         catch (failure) {
           if (failure instanceof HttpError && failure.status === 409 && !controller.signal.aborted) {
-            // A controlled rebind closes the old hub before creating the Azure session.
-            resetRuntimeToAzure();
+            // Close the session and show the daily-limit notice; Azure is retired.
+            resetRuntime();
             // The old tab lease can finish leaving after the new runtime joins.
             // Give the replacement a different lease so a late beacon cannot remove it.
             tabIdRef.current = crypto.randomUUID();

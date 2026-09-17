@@ -33,4 +33,7 @@
     <ProjectReference Include="..\..\services\realtime-events-service\RealtimeEvents.Infrastructure\RealtimeEvents.Infrastructure.csproj" />
     <ProjectReference Include="..\..\services\transaction-service\Transaction.Infrastructure\Transaction.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../../infra/terraform/aws-runtime/bus-schema.sql" Link="bus-schema.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

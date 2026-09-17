@@ -89,7 +89,7 @@ def handler(event, context):
             ec2.start_instances(InstanceIds=[instance_id])
         elif action == "stop":
             ec2.stop_instances(InstanceIds=[instance_id])
-        # 409 makes the browser select Azure immediately when the daily allowance is gone.
+        # 409 makes the browser show the daily-limit notice without retrying wake.
         return response(409 if status == "daily-limit" else 202 if status != "running" else 200, status)
     finally:
         table.update_item(Key=key, UpdateExpression="REMOVE lockUntil, lockToken",
