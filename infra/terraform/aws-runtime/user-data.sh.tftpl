@@ -1,13 +1,11 @@
 #!/bin/bash
 set -euo pipefail
-
 dnf install -y docker jq
 systemctl enable --now docker
-
 mkdir -p /usr/local/lib/docker/cli-plugins /opt/realtime-pix
-curl -fsSL "https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64" \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
+curl -fsSL https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+echo '${compose_base64}' | base64 -d >/opt/realtime-pix/docker-compose.yml
 
 cat >/opt/realtime-pix/nginx.conf <<'NGINX'
 events {}
@@ -16,7 +14,7 @@ http {
   server {
     listen 80;
     if ($http_x_realtime_pix_origin != "${origin_header}") { return 403; }
-
+    proxy_read_timeout 3600s;
     location ~ ^/(sessions|presence)/ {
       proxy_pass http://identity-presence:8080;
       proxy_http_version 1.1;
@@ -25,15 +23,7 @@ http {
       proxy_set_header Host $host;
       proxy_set_header X-Forwarded-Proto https;
     }
-    location = /presence/hub {
-      proxy_pass http://identity-presence:8080;
-      proxy_http_version 1.1;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-Proto https;
-    }
-    location ~ ^/(events)/ {
+    location ~ ^/events/ {
       proxy_pass http://realtime-events:8080;
       proxy_http_version 1.1;
       proxy_set_header Upgrade $http_upgrade;
@@ -44,141 +34,30 @@ http {
     location = /realtime/token {
       proxy_pass http://realtime-events:8080;
       proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-Proto https;
     }
     location / {
       proxy_pass http://api-gateway:8080;
-      proxy_http_version 1.1;
       proxy_set_header Host $host;
       proxy_set_header X-Forwarded-Proto https;
     }
   }
 }
 NGINX
-
-cat >/opt/realtime-pix/docker-compose.yml <<'COMPOSE'
-name: realtime-pix-aws
-
-x-common: &common
-  restart: unless-stopped
-  env_file: .env
-  environment: &common-env
-    ASPNETCORE_ENVIRONMENT: Production
-    ASPNETCORE_URLS: http://0.0.0.0:8080
-    ASPNETCORE_HTTP_PORTS: "8080"
-    AppConfiguration__Endpoint: ""
-    APPLICATIONINSIGHTS_CONNECTION_STRING: $${APPLICATIONINSIGHTS_CONNECTION_STRING}
-    EventBus__Provider: ServiceBus
-    EventBus__ServiceBus__FullyQualifiedNamespace: $${SERVICE_BUS_FQDN}
-    EventBus__ServiceBus__TopicName: platform-events
-    AzureSignalR__ConnectionString: $${SIGNALR_CONNECTION_STRING}
-    Cors__AllowedOrigins__0: ${allowed_cors_origin}
-
-services:
-  identity-presence:
-    <<: *common
-    image: ghcr.io/germanao/realtime-pix-identity-presence-service:aws-latest
-    mem_limit: 512m
-    environment:
-      <<: *common-env
-      ConnectionStrings__Default: $${IDENTITY_DB_CONNECTION}
-      Postgres__UseManagedIdentity: "true"
-
-  bank-a:
-    <<: *common
-    image: ghcr.io/germanao/realtime-pix-bank-ledger-service:aws-latest
-    mem_limit: 512m
-    environment:
-      <<: *common-env
-      ConnectionStrings__Default: $${BANK_A_DB_CONNECTION}
-      Postgres__UseManagedIdentity: "true"
-      Bank__Id: bank-a
-      Bank__Name: Aurora Bank
-      Bank__WelcomeBalance: "10000"
-      EventBus__ServiceBus__QueueName: bank-a-commands
-
-  bank-b:
-    <<: *common
-    image: ghcr.io/germanao/realtime-pix-bank-ledger-service:aws-latest
-    mem_limit: 512m
-    environment:
-      <<: *common-env
-      ConnectionStrings__Default: $${BANK_B_DB_CONNECTION}
-      Postgres__UseManagedIdentity: "true"
-      Bank__Id: bank-b
-      Bank__Name: Boreal Bank
-      Bank__WelcomeBalance: "0"
-      EventBus__ServiceBus__QueueName: bank-b-commands
-
-  transaction:
-    <<: *common
-    image: ghcr.io/germanao/realtime-pix-transaction-service:aws-latest
-    mem_limit: 512m
-    environment:
-      <<: *common-env
-      ConnectionStrings__Default: $${TRANSACTION_DB_CONNECTION}
-      Postgres__UseManagedIdentity: "true"
-      EventBus__ServiceBus__SubscriptionName: transaction
-      Saga__AllowFailureSimulation: "true"
-      Saga__StepTimeoutSeconds: "30"
-      Saga__SimulatedCreditTimeoutSeconds: "8"
-      Saga__CompensationTimeoutSeconds: "30"
-
-  realtime-events:
-    <<: *common
-    image: ghcr.io/germanao/realtime-pix-realtime-events-service:aws-latest
-    mem_limit: 512m
-    environment:
-      <<: *common-env
-      ConnectionStrings__Default: $${REALTIME_DB_CONNECTION}
-      Postgres__UseManagedIdentity: "true"
-      EventBus__ServiceBus__SubscriptionName: realtime-events-v2
-
-  api-gateway:
-    <<: *common
-    image: ghcr.io/germanao/realtime-pix-api-gateway:aws-latest
-    mem_limit: 384m
-    environment:
-      <<: *common-env
-      Services__IdentityPresence: http://identity-presence:8080
-      Services__BankA: http://bank-a:8080
-      Services__BankB: http://bank-b:8080
-      Services__Transaction: http://transaction:8080
-      Services__RealtimeEvents: http://realtime-events:8080
-
-  edge:
-    image: nginx:1.29-alpine
-    restart: unless-stopped
-    depends_on:
-      - identity-presence
-      - realtime-events
-      - api-gateway
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    mem_limit: 128m
-COMPOSE
-
 cat >/usr/local/sbin/realtime-pix-start <<'START'
 #!/bin/bash
 set -euo pipefail
+umask 077
 cd /opt/realtime-pix
-aws ssm get-parameter --region "${aws_region}" --name "${parameter_path}/compose-env" --with-decryption \
-  --query Parameter.Value --output text > .env
-chmod 600 .env
-# Image updates are a deployment operation, not a dependency of every cold boot.
+aws ssm get-parameter --region '${aws_region}' --name '${parameter_path}/aws-only-env' --with-decryption --query Parameter.Value --output text > .env
 docker compose up -d --pull missing --remove-orphans
 START
 chmod +x /usr/local/sbin/realtime-pix-start
-
 cat >/etc/systemd/system/realtime-pix.service <<'UNIT'
 [Unit]
-Description=Realtime PIX AWS demo runtime
+Description=Realtime PIX AWS-only demo runtime
 After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service
-
 [Service]
 Type=oneshot
 RemainAfterExit=yes
@@ -187,11 +66,11 @@ ExecStop=/usr/bin/docker compose -f /opt/realtime-pix/docker-compose.yml down
 TimeoutStartSec=900
 Restart=on-failure
 RestartSec=15
-
 [Install]
 WantedBy=multi-user.target
 UNIT
-
 systemctl daemon-reload
 systemctl enable realtime-pix.service
+# Existing data must first be restored using migrate-to-aws.py or the private
+# S3 backups. No implicit empty database reset is performed by this bootstrap.
 systemctl start realtime-pix.service || true

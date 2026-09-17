@@ -27,6 +27,7 @@ DATABASES = {
     'BANK_B_DB_CONNECTION': ('bank_b_ledger_db', 'bank_b_app'),
     'TRANSACTION_DB_CONNECTION': ('transaction_db', 'transaction_app'),
     'REALTIME_DB_CONNECTION': ('realtime_projection_db', 'realtime_app'),
+    'LEGACY_DB_CONNECTION': ('wallet_ledger_db', 'legacy_wallet_app'),
 }
 
 
@@ -85,6 +86,9 @@ def main():
         raise RuntimeError('A pinned aws-<40-character commit> image tag is required.')
     BACKUPS.mkdir(parents=True, exist_ok=True)
     old = read_env(ROOT / '.env')
+    # Preserve the retired wallet's historical data as well as the active services.
+    identity_parts = old['IDENTITY_DB_CONNECTION'].split(';')
+    old['LEGACY_DB_CONNECTION'] = ';'.join('Database=wallet_ledger_db' if p.lower().startswith('database=') else p for p in identity_parts)
     body = urllib.parse.urlencode({'client_id': old['AZURE_CLIENT_ID'],
         'client_secret': old['AZURE_CLIENT_SECRET'], 'grant_type': 'client_credentials',
         'scope': 'https://ossrdbms-aad.database.windows.net/.default'}).encode()
@@ -139,6 +143,8 @@ def main():
     bus_database, bus_role, bus_password = roles['BUS_DB_CONNECTION']
     bus_env = dict(admin, PGDATABASE=bus_database, PGUSER=bus_role, PGPASSWORD=bus_password)
     for key, (database, role) in DATABASES.items():
+        if key == 'LEGACY_DB_CONNECTION':
+            continue
         destination = dict(admin, PGDATABASE=database, PGUSER=role, PGPASSWORD=roles[key][2])
         envelopes = client(destination, 'psql', '-X', '-At', '-v', 'ON_ERROR_STOP=1', '-c', 'SELECT "EnvelopeJson"::text FROM integration_outbox_messages ORDER BY "OccurredAt";')
         rows = '\n'.join(json.dumps(json.loads(raw), separators=(',', ':')) for raw in envelopes.splitlines())

@@ -146,12 +146,13 @@ resource "aws_instance" "runtime" {
     parameter_path      = local.runtime_param_path
     origin_header       = random_password.origin_header.result
     allowed_cors_origin = var.allowed_cors_origin
+    compose_base64      = base64encode(file("${path.module}/compose.aws.yml"))
   })
 
   root_block_device {
-    volume_type           = "gp3"
-    volume_size           = 20
-    encrypted             = true
+    volume_type = "gp3"
+    volume_size = 20
+    encrypted   = true
     # The AWS-only host now owns persistent demo databases.
     delete_on_termination = false
   }
