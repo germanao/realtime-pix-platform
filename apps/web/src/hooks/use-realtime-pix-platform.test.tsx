@@ -81,7 +81,7 @@ it("keeps the session usable and retries an initial live-connection failure", as
   hook.unmount();
 });
 
-it("uses a new lease when the AWS allowance triggers an Azure rebind", async () => {
+it("uses a new lease when the AWS allowance resets the startup session", async () => {
   mocks.awake.mockRejectedValueOnce(new HttpError("daily limit", 409)).mockResolvedValue(undefined);
   const hook = renderHook(() => useRealtimePixPlatform());
   await act(() => vi.advanceTimersByTimeAsync(0));

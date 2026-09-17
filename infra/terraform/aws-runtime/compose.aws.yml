@@ -52,6 +52,7 @@ services:
       <<: *common-env
       ConnectionStrings__Default: ${BANK_A_DB_CONNECTION}
       Bank__Id: bank-a
+      EventBus__QueueName: bank-a-commands
       Bank__Name: Aurora Bank
       Bank__WelcomeBalance: "10000"
   bank-b:
@@ -62,6 +63,7 @@ services:
       <<: *common-env
       ConnectionStrings__Default: ${BANK_B_DB_CONNECTION}
       Bank__Id: bank-b
+      EventBus__QueueName: bank-b-commands
       Bank__Name: Boreal Bank
       Bank__WelcomeBalance: "0"
   transaction:

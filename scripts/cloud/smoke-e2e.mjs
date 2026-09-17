@@ -2,11 +2,12 @@
 
 const apiBaseUrl = process.env.API_BASE_URL;
 if (!apiBaseUrl) {
-  throw new Error("Set API_BASE_URL to the APIM API URL.");
+  throw new Error("Set API_BASE_URL to the demo API URL.");
 }
 
 const apiBase = apiBaseUrl.replace(/\/$/, "");
 const runId = process.env.GITHUB_RUN_ID ?? Date.now().toString();
+const createdSessions = [];
 const terminalStates = new Set(["completed", "compensated", "failed", "manual_intervention"]);
 
 async function api(path, options = {}) {
@@ -15,7 +16,7 @@ async function api(path, options = {}) {
     headers.set("content-type", "application/json");
   }
 
-  const response = await fetch(`${apiBase}${path}`, { ...options, headers });
+  const response = await fetch(`${apiBase}${path}`, { ...options, headers, signal: options.signal ?? AbortSignal.timeout(30000) });
   const text = await response.text();
   let body = null;
   if (text) {
@@ -49,7 +50,7 @@ async function verifyBrowserPreflight() {
     response.headers.get("access-control-allow-origin") !== origin ||
     !allowedMethods.split(",").map((method) => method.trim()).includes("POST")
   ) {
-    throw new Error(`APIM browser preflight failed with ${response.status}: ${await response.text()}`);
+    throw new Error(`Browser preflight failed with ${response.status}: ${await response.text()}`);
   }
 }
 
@@ -103,8 +104,9 @@ async function createUser(role) {
   const clientId = `smoke-${role}-${runId}-${Math.random().toString(16).slice(2)}`;
   const session = await api("/sessions/anonymous", {
     method: "POST",
-    body: JSON.stringify({ clientId })
+    body: JSON.stringify({ clientId, tabId: "ci-smoke" })
   });
+  createdSessions.push({ userId: session.userId, connectionId: `http:${clientId}:ci-smoke` });
   await api(`/wallet/users/${encodeURIComponent(session.userId)}/bootstrap`, { method: "POST" });
   return session;
 }
@@ -250,6 +252,7 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+try {
 await verifyBrowserPreflight();
 await api("/health");
 await api("/health/ready");
@@ -321,3 +324,8 @@ results.push(await runScenario({
 }));
 
 console.log(JSON.stringify({ status: "ok", senderUserId: sender.userId, recipientUserId: recipient.userId, results }));
+} finally {
+  await Promise.all(createdSessions.map((session) => api("/presence/leave", {
+    method: "POST", body: JSON.stringify(session)
+  }).catch((error) => console.error("Smoke presence cleanup failed:", error.message))));
+}
