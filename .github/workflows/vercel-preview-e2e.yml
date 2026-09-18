@@ -55,7 +55,7 @@ jobs:
               --data "$stale_payload" \
               "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG" >/dev/null
           done < <(jq -r --arg current "$bypass_secret" \
-            '.protectionBypass | to_entries[] | select(.value.note == "GitHub Actions preview E2E" and .key != $current) | .key' \
+            '.protectionBypass | to_entries[] | select(.value.note == "GitHub Actions preview E2E" and .value.isEnvVar == false and .key != $current) | .key' \
             <<< "$response")
           echo "VERCEL_AUTOMATION_BYPASS_SECRET=$bypass_secret" >> "$GITHUB_ENV"
       - name: Run preview E2E
