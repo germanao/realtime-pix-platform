@@ -47,7 +47,7 @@ jobs:
           while IFS= read -r stale_secret; do
             echo "::add-mask::$stale_secret"
             stale_payload="$(jq -nc --arg secret "$stale_secret" \
-              '{revoke:{secret:$secret,regenerate:false}}')"
+              '{revoke:{secret:$secret}}')"
             curl --fail-with-body --silent --show-error \
               --request PATCH \
               --header "Authorization: Bearer $VERCEL_API_TOKEN" \
@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           payload="$(jq -nc --arg secret "$VERCEL_AUTOMATION_BYPASS_SECRET" \
-            '{revoke:{secret:$secret,regenerate:false}}')"
+            '{revoke:{secret:$secret}}')"
           curl --fail-with-body --silent --show-error \
             --request PATCH \
             --header "Authorization: Bearer $VERCEL_API_TOKEN" \
