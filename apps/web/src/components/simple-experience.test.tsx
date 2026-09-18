@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { money } from "@/lib/presentation";
 import { AmountPicker } from "./simple-experience";
-import { simpleFlowLabels } from "./transaction-map";
+import { flowNodeDimensions, simpleFlowLabels } from "./transaction-map";
 
 describe("AmountPicker", () => {
   it("supports $25, $50, and a custom amount", () => {
@@ -43,5 +43,9 @@ describe("simple flow vocabulary", () => {
     expect(renderedLabels).toContain("Front Door");
     expect(renderedLabels).toContain("Sender bank");
     expect(renderedLabels).toContain("Recipient bank");
+  });
+
+  it("provides stable graph dimensions while transfer updates replace node data", () => {
+    expect(flowNodeDimensions).toEqual({ width: 168, height: 84 });
   });
 });
