@@ -14,7 +14,7 @@ The normal release order is: merge a green pull request, wait for image publishi
 ## Required external configuration
 
 - GitHub environment `poc`: `VERCEL_API_TOKEN`.
-- Vercel production variable: `NEXT_PUBLIC_AWS_RUNTIME_URL`.
+- Vercel production and preview variable: `NEXT_PUBLIC_AWS_RUNTIME_URL`.
 - AWS SSM SecureString: `/realtime-pix/poc/aws-only-env`.
 - GHCR images readable by the runtime host.
 

@@ -13,6 +13,11 @@ jobs:
       github.event.deployment_status.state == 'success' &&
       github.event.deployment.environment == 'Preview – realtime-pix-web'
     runs-on: ubuntu-latest
+    environment: poc
+    env:
+      VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
+      VERCEL_PROJECT_NAME: realtime-pix-web
+      VERCEL_TEAM_SLUG: germanaos-projects
     defaults:
       run:
         working-directory: apps/web
@@ -25,7 +30,33 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Create a temporary Vercel automation bypass
+        shell: bash
+        run: |
+          bypass_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$bypass_secret"
+          payload="$(jq -nc --arg secret "$bypass_secret" \
+            '{generate:{secret:$secret,note:"GitHub Actions preview E2E"}}')"
+          curl --fail-with-body --silent --show-error \
+            --request PATCH \
+            --header "Authorization: Bearer $VERCEL_API_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG" >/dev/null
+          echo "VERCEL_AUTOMATION_BYPASS_SECRET=$bypass_secret" >> "$GITHUB_ENV"
       - name: Run preview E2E
         env:
           PLAYWRIGHT_BASE_URL: ${{ github.event.deployment_status.target_url }}
         run: npm run test:e2e
+      - name: Revoke the temporary Vercel automation bypass
+        if: always() && env.VERCEL_AUTOMATION_BYPASS_SECRET != ''
+        shell: bash
+        run: |
+          payload="$(jq -nc --arg secret "$VERCEL_AUTOMATION_BYPASS_SECRET" \
+            '{revoke:{secret:$secret,regenerate:false}}')"
+          curl --fail-with-body --silent --show-error \
+            --request PATCH \
+            --header "Authorization: Bearer $VERCEL_API_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG" >/dev/null
