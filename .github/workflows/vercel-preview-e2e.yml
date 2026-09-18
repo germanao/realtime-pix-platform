@@ -33,16 +33,15 @@ jobs:
       - name: Create a temporary Vercel automation bypass
         shell: bash
         run: |
-          bypass_secret="$(openssl rand -hex 32)"
-          echo "::add-mask::$bypass_secret"
-          payload="$(jq -nc --arg secret "$bypass_secret" \
-            '{generate:{secret:$secret,note:"GitHub Actions preview E2E"}}')"
-          curl --fail-with-body --silent --show-error \
+          payload='{"generate":{"note":"GitHub Actions preview E2E"}}'
+          response="$(curl --fail-with-body --silent --show-error \
             --request PATCH \
             --header "Authorization: Bearer $VERCEL_API_TOKEN" \
             --header "Content-Type: application/json" \
             --data "$payload" \
-            "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG" >/dev/null
+            "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG")"
+          bypass_secret="$(jq -er '.protectionBypass.secret' <<< "$response")"
+          echo "::add-mask::$bypass_secret"
           echo "VERCEL_AUTOMATION_BYPASS_SECRET=$bypass_secret" >> "$GITHUB_ENV"
       - name: Run preview E2E
         env:
