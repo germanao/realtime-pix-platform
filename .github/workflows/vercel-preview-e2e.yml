@@ -41,9 +41,22 @@ jobs:
             --data "$payload" \
             "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG")"
           bypass_secret="$(jq -er \
-            'if (.protectionBypass | type) == "string" then .protectionBypass else .protectionBypass.secret end' \
+            '[.protectionBypass | to_entries[] | select(.value.note == "GitHub Actions preview E2E")] | max_by(.value.createdAt).key' \
             <<< "$response")"
           echo "::add-mask::$bypass_secret"
+          while IFS= read -r stale_secret; do
+            echo "::add-mask::$stale_secret"
+            stale_payload="$(jq -nc --arg secret "$stale_secret" \
+              '{revoke:{secret:$secret,regenerate:false}}')"
+            curl --fail-with-body --silent --show-error \
+              --request PATCH \
+              --header "Authorization: Bearer $VERCEL_API_TOKEN" \
+              --header "Content-Type: application/json" \
+              --data "$stale_payload" \
+              "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG" >/dev/null
+          done < <(jq -r --arg current "$bypass_secret" \
+            '.protectionBypass | to_entries[] | select(.value.note == "GitHub Actions preview E2E" and .key != $current) | .key' \
+            <<< "$response")
           echo "VERCEL_AUTOMATION_BYPASS_SECRET=$bypass_secret" >> "$GITHUB_ENV"
       - name: Run preview E2E
         env:
