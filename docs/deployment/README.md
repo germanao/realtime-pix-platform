@@ -1,59 +1,32 @@
-# Deployment Guide Index
+# Deployment
 
-Terraform and GitHub Actions are the current deployment path. The Azure Portal/Azure DevOps documents remain as learning history and must not be used as the source of truth for the current Saga topology.
+The supported deployment is Vercel plus the on-demand AWS runtime in `us-east-2`.
 
-## Current Path
+## Release paths
 
-1. Apply `infra/terraform/bootstrap` locally once for a new Azure environment.
-2. Migrate bootstrap state with `scripts/cloud/migrate-bootstrap-state.sh`.
-3. For an existing environment, authenticate locally as the subscription owner and review/apply bootstrap changes from `infra/terraform/bootstrap`. GitHub Actions never manages its own OIDC identities or permissions.
-4. Run `scripts/cloud/bootstrap-github-variables.sh` to synchronize the resulting non-secret GitHub variables.
-5. Run `scripts/cloud/migrate-environment-state-keys.sh` once if old POC state keys exist.
-6. Run `infrastructure-apply.yml` with operation `plan` before an approved `apply` for foundation changes.
-7. Run `deploy-poc.yml` to build immutable images, apply the scale-to-zero runtime, configure Entra database principals, run EF migrations, execute the one-shot bot maintenance job, run cloud Saga smoke tests, and synchronize Vercel variables.
+- `.github/workflows/deploy-web.yml` publishes `apps/web` to the production Vercel project.
+- `.github/workflows/publish-aws-runtime.yml` publishes immutable service images to GHCR.
+- `infra/terraform/aws-runtime/update-host.ps1` updates the existing AWS host through SSM.
+- `infra/terraform/aws-runtime` owns CloudFront, the wake controller, runtime guardrails, IAM, backups, and the existing EC2 integration.
 
-The POC is tuned for an eligible Azure account's 12-month free-service allowances. Read [free-tier operations](free-tier.md) before applying because Azure budgets notify but do not stop resources automatically.
+The normal release order is: merge a green pull request, wait for image publishing, update the host to the tested commit image tag, verify readiness and a complete PIX flow, then verify idle shutdown. Infrastructure changes require a reviewed Terraform plan before apply.
 
-The deployment workflow performs five Saga scenarios through APIM: completion, debit rejection, compensated credit rejection, compensated credit timeout, and refund rejection/manual intervention. It verifies persisted transitions, unique ledger operations, projections, idempotent replay, and fictional-money accounting.
+## Required external configuration
 
-## Required GitHub Configuration
+- GitHub environment `poc`: `VERCEL_API_TOKEN`.
+- Vercel production variable: `NEXT_PUBLIC_AWS_RUNTIME_URL`.
+- AWS SSM SecureString: `/realtime-pix/poc/aws-only-env`.
+- GHCR images readable by the runtime host.
 
-GitHub environment `poc` requires:
+No Azure credentials or resources are required.
 
-- `AZURE_APPLY_CLIENT_ID` (with `AZURE_CLIENT_ID` retained as a temporary compatibility alias)
-- `AZURE_IMAGE_CLIENT_ID`
-- `AZURE_TENANT_ID`
-- `AZURE_SUBSCRIPTION_ID`
-- `TFSTATE_RESOURCE_GROUP`
-- `TFSTATE_STORAGE_ACCOUNT`
-- `TFSTATE_CONTAINER`
-- `PUBLISHER_EMAIL`
-- secret `VERCEL_API_TOKEN`
+## Operational guardrails
 
-Trusted pull-request plans require repository-scoped `AZURE_PLAN_CLIENT_ID`, tenant/subscription identifiers, Terraform backend identifiers, and `PUBLISHER_EMAIL`. The owner-run helper script writes these non-secret values after bootstrap apply; the plan identity has Reader and Blob Data Reader roles only.
+- The browser wake endpoint starts only the existing instance.
+- The controller enforces an aggregate six-hour daily allowance and stops the host after 20 idle minutes.
+- Database ports are private to Docker networking.
+- Runtime secrets stay in SSM and are never embedded in the frontend or repository.
+- Production images are pinned to a commit tag; `aws-latest` is a convenience tag, not the deployment source of truth.
+- Backups are encrypted, private, off-host objects and the runtime role cannot delete them.
 
-Use exact names emitted by Terraform outputs and `scripts/cloud/bootstrap-github-variables.sh`; never commit values.
-
-## Operational Rules
-
-- Bootstrap is owner-operated; GitHub cannot create or expand its own Azure permissions.
-- Foundation/runtime apply and destroy require the protected `poc` environment.
-- Deployment concurrency queues; it does not cancel a state-writing run.
-- Database firewall access is temporary and removed in unconditional cleanup.
-- EF migrations run before revisions are restarted.
-- Foundation and runtime use different state keys.
-- Binary Terraform plans are not uploaded from this public repository.
-- Production reference is never applied by a repository workflow.
-
-## Historical Guides
-
-These preserve the learning sequence that created the original six-service POC. Names, SKUs, database counts, state keys, and commands can be obsolete:
-
-- [Full reset migration](github-terraform-full-reset.md)
-- [Manual Azure provisioning](recommended-cloud-services-provisioning.md)
-- [Old cloud integration specification](cloud-integration-change-specification.md)
-- [Azure Portal Container Apps POC](azure-container-apps-portal-poc.md)
-- [Original Terraform/CI/CD guide](azure-container-apps-terraform-cicd.md)
-- [Original scripted steps 16-26](azure-scripts-steps-16-26.md)
-
-For current behavior use [the architecture guide](../architecture/README.md), [Azure provisioning model](../architecture/cloud-provisioning.md), Terraform code, and workflow code.
+For procedures and recovery notes, use the [AWS runtime guide](../../infra/terraform/aws-runtime/README.md). For expected spend and limits, see [cost controls](free-tier.md).

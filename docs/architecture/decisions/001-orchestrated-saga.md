@@ -4,7 +4,7 @@
 
 ## Context
 
-A transfer changes state in two banks that own separate databases. A cross-database ACID transaction would couple services and is not available through Azure Service Bus.
+A transfer changes state in two banks that own separate databases. A cross-database ACID transaction would couple services and is not available through the asynchronous event transport.
 
 ## Decision
 

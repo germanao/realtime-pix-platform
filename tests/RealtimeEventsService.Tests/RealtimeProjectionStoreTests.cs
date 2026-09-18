@@ -110,7 +110,7 @@ public sealed class RealtimeProjectionStoreTests
     private static TimelineEventResponse CreateTimelineItem(string eventId, string eventType, string? transferId)
     {
         var payload = transferId is null
-            ? JsonSerializer.SerializeToElement(new UserPresenceChangedPayload("user-a", "Azure Ledger", true, false, DateTimeOffset.UtcNow), JsonDefaults.Options)
+            ? JsonSerializer.SerializeToElement(new UserPresenceChangedPayload("user-a", "Aurora Ledger", true, false, DateTimeOffset.UtcNow), JsonDefaults.Options)
             : JsonSerializer.SerializeToElement(new PixTransferRequestedPayload(transferId, "key", "sender", "sender_bank-a", "recipient", "recipient_bank-a", 10m), JsonDefaults.Options);
 
         return new TimelineEventResponse(

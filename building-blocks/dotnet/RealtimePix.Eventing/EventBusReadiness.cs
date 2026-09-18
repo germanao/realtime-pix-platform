@@ -1,4 +1,3 @@
-using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -31,47 +30,6 @@ public sealed class FileEventBusReadinessProbe(
         {
             logger.LogWarning(exception, "The local event transport readiness probe failed.");
             return new EventBusReadinessResult(false, "File", "file-transport-unavailable");
-        }
-    }
-}
-
-public sealed class ServiceBusReadinessProbe(
-    ServiceBusClient client,
-    IOptions<ServiceBusEventBusOptions> options,
-    ILogger<ServiceBusReadinessProbe> logger) : CachedEventBusReadinessProbe
-{
-    protected override async Task<EventBusReadinessResult> CheckCoreAsync(CancellationToken cancellationToken)
-    {
-        if (client.IsClosed)
-        {
-            return new EventBusReadinessResult(false, "ServiceBus", "The Service Bus client is closed.");
-        }
-
-        try
-        {
-            var settings = options.Value;
-            if (!string.IsNullOrWhiteSpace(settings.QueueName))
-            {
-                await using var receiver = client.CreateReceiver(settings.QueueName);
-                await receiver.PeekMessagesAsync(1, cancellationToken: cancellationToken);
-            }
-            else if (!string.IsNullOrWhiteSpace(settings.SubscriptionName))
-            {
-                await using var receiver = client.CreateReceiver(settings.TopicName, settings.SubscriptionName);
-                await receiver.PeekMessagesAsync(1, cancellationToken: cancellationToken);
-            }
-            else
-            {
-                await using var sender = client.CreateSender(settings.TopicName);
-                using var batch = await sender.CreateMessageBatchAsync(cancellationToken);
-            }
-
-            return new EventBusReadinessResult(true, "ServiceBus");
-        }
-        catch (Exception exception) when (exception is ServiceBusException or TimeoutException or UnauthorizedAccessException)
-        {
-            logger.LogWarning(exception, "The Service Bus readiness probe failed.");
-            return new EventBusReadinessResult(false, "ServiceBus", "service-bus-unavailable");
         }
     }
 }

@@ -88,7 +88,7 @@ public sealed class EventingPostgreSqlTests(PostgreSqlFixture postgres)
     {
         var connectionString = await CreateMigratedDatabaseAsync();
         var envelope = CreateEnvelope(Guid.NewGuid());
-        var options = Options.Create(new ServiceBusEventBusOptions { QueueName = "bank-a-commands" });
+        var options = Options.Create(new EventBusConsumerOptions { ConsumerName = "bank-a-commands" });
 
         await using (var interruptedContext = CreateContext(connectionString))
         {

@@ -101,7 +101,6 @@ const services = [
     Bank__Name: "Bank A",
     Bank__WelcomeBalance: "10000",
     EventBus__QueueName: "bank-a-commands",
-    EventBus__ServiceBus__QueueName: "bank-a-commands",
     ...(args.has("--with-postgres") ? { ConnectionStrings__Default: postgresConnections.bankA } : {})
   }],
   ["bank-b-ledger-service", "services/bank-ledger-service/BankLedger.Api/BankLedger.Api.csproj", 5106, {
@@ -109,7 +108,6 @@ const services = [
     Bank__Name: "Bank B",
     Bank__WelcomeBalance: "0",
     EventBus__QueueName: "bank-b-commands",
-    EventBus__ServiceBus__QueueName: "bank-b-commands",
     ...(args.has("--with-postgres") ? { ConnectionStrings__Default: postgresConnections.bankB } : {})
   }],
   ["transaction-service", "services/transaction-service/Transaction.Api/Transaction.Api.csproj", 5103,

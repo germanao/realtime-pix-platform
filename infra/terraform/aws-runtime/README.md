@@ -1,39 +1,50 @@
-# AWS-only demo runtime
+# AWS on-demand demo runtime
 
-The ten-user demo runs on the existing `c7i-flex.large` in `us-east-2`, behind CloudFront. Vercel serves the frontend and GitHub/GHCR builds and stores the application images. **No running service requires Azure.**
+This stack runs the ten-user backend on one EC2 instance in `us-east-2`, behind CloudFront. Vercel serves the frontend and GHCR stores the application images.
 
-## Dependency mapping
+## Components
 
-| Former Azure dependency | AWS-hosted replacement |
+| Capability | Implementation |
 | --- | --- |
-| PostgreSQL Flexible Server | PostgreSQL 16 container; separate service databases/users on encrypted EBS |
-| Service Bus | Durable PostgreSQL event/command transport with independent consumer acknowledgements and the existing transactional outbox/inbox |
-| Azure SignalR | Direct ASP.NET Core SignalR through nginx and CloudFront; one events connection per browser |
-| Container Apps / API Management | Existing EC2 Docker services and nginx |
-| App Configuration / workload credentials | Private SSM SecureString and explicit Docker environment settings |
-| Application Insights / Log Analytics | Size-limited container logs; controller logs in CloudWatch |
-| Bot Container Apps job | Small bot worker on the same host |
+| Service compute | Docker Compose on encrypted EC2/EBS |
+| Relational state | PostgreSQL 16 with separate service databases |
+| Messaging | Durable PostgreSQL queues/topics plus transactional outbox/inbox |
+| Realtime | Direct ASP.NET Core SignalR through nginx and CloudFront |
+| Wake and limits | Lambda, EventBridge, and DynamoDB |
+| Configuration | SSM SecureString `/realtime-pix/poc/aws-only-env` |
+| Images | Commit-pinned GHCR tags |
+| Recovery | Private encrypted S3 backups |
 
-The single-host design is intentionally basic, not highly available. Do not scale a consumer to multiple replicas without adding distributed delivery claims. Message delivery is at least once; inbox deduplication and idempotent domain handlers remain essential. Acknowledgements are per message, not a numeric cursor, so concurrent commits cannot skip messages.
+The single-host design is intentionally basic and not highly available. Do not add replicas without designing distributed delivery claims and a SignalR backplane.
 
-## On-demand operation and costs
+## Runtime behavior
 
-The browser POSTs `/runtime/wake`; Lambda starts exactly this existing instance. It waits for dependency readiness before joining. Cached container images are used at boot. Activity heartbeats keep the host awake; the controller stops it after 20 idle minutes. Six aggregate running hours are allowed per UTC day, enforced every five minutes. There is no weekday restriction. When the allowance is exhausted, the UI shows a clear notice until 00:00 UTC; there is **no Azure fallback**.
+The browser calls `/runtime/wake`. The controller starts exactly the Terraform-managed instance and waits for service readiness. Browser activity extends the session; a five-minute controller check stops the host after 20 idle minutes and enforces six aggregate running hours per UTC day. There is no scheduled weekday start and no fallback runtime.
 
-This consumes AWS credits and is not a zero-charge guarantee. Disk, retained public IP, snapshots/backups, CloudFront, controller and logs can incur charges even while EC2 is stopped. The $15 monthly budget is an alert, not a billing cutoff. Anonymous visitors can consume the shared allowance. The private origin header and instance role never reach the browser.
+The allowance controls EC2 runtime, not total billing. EBS, public IPv4, S3, CloudFront, Lambda, DynamoDB, logs, and snapshots may incur charges while the instance is stopped. The AWS budget is an alert, not a hard cutoff.
 
-## Data safety and migration
+## Terraform
 
-`migrate-to-aws.py` is a guarded, one-time operation invoked by `scripts/cloud/deploy-aws-only.ps1`. It pulls pinned images before pausing writers, dumps the five active service databases plus the retired wallet database, uploads private encrypted archives, restores with independent passwords, and compares exact public-table row counts. It replays historical outbox envelopes into the new transport while preserving the previous inbox consumer keys, so already handled events are deduplicated and stranded published messages can recover.
+The S3 backend uses partial configuration so no account-specific bucket is committed:
 
-The script refuses to overwrite a populated destination or repeat a completed migration. It does not delete Azure. Any interruption before the completion marker requires inspection, not a forced rerun. Old configuration stays in `/opt/realtime-pix/migration-aws-only` until cloud cleanup is verified.
+```powershell
+terraform -chdir=infra/terraform/aws-runtime init -backend-config="bucket=realtime-pix-tfstate-<account-id>"
+terraform -chdir=infra/terraform/aws-runtime plan -var="budget_email=<email>"
+```
 
-Backups are private objects under `s3://realtime-pix-tfstate-886781461608/backups/aws-only/`. The runtime role can write only that prefix and cannot delete backups. `backup-databases.sh` exports the seven databases, including the durable bus, for scheduled off-host recovery. Database ports are not published. The encrypted root EBS volume is retained if the instance is terminated. Normal stops/reboots preserve the database directory.
+Review every plan. The EC2 root volume has `delete_on_termination = false`; AMI and bootstrap changes are intentionally ignored to prevent an accidental data-host replacement. Host changes are delivered through SSM.
 
-Restore archives into fresh databases using PostgreSQL 16 `pg_restore --no-owner --no-privileges`, recreate the restricted database roles, and provision `/realtime-pix/poc/aws-only-env` as a SecureString before starting applications. Match image versions to schema versions. Never run `docker compose down -v`, delete `data/postgres`, or rebuild a host without preserving its volume and verified backups.
+## Deploy an application release
 
-## Deployment and verification
+1. Wait for `publish-aws-runtime.yml` to publish `aws-<commit-sha>` images.
+2. Set `RUNTIME_IMAGE_TAG` in the protected SSM environment to that exact tag.
+3. Run `update-host.ps1 -InstanceId <id>` from an authenticated AWS CLI session.
+4. Verify `/health/ready`, direct SignalR, successful and compensated transfers, presence expiry, idle shutdown, and a stopped-host cold start.
 
-`publish-aws-runtime.yml` has no Azure authentication step. It publishes `aws-<commit SHA>` and `aws-latest` images, including the bot. Production compose pins `RUNTIME_IMAGE_TAG` to a tested commit. Pull explicitly during deployment, recreate the affected containers, restart nginx to refresh upstream IPs, and save the updated environment in SSM. `user_data` is ignored for the existing instance to avoid replacement; bootstrap changes are rolled out through SSM.
+Never deploy `aws-latest` as the source of truth.
 
-Before release: run web tests/build, .NET tests, Docker-backed PostgreSQL transport tests, Terraform validation and wake-controller tests. In production verify ten concurrent clients, direct SignalR, successful and compensated transfers, presence expiry, and a stopped-host cold start. Before deleting Azure, verify copied row counts, private off-host archives, and the AWS-only application. Keep the retired Azure GitHub deployment/drift workflows disabled so they cannot recreate resources.
+## Backups and recovery
+
+`backup-databases.sh` dumps the five active service databases and the durable event-bus database, then uploads private AES-256-encrypted objects to the current account's `realtime-pix-tfstate-<account-id>` bucket. The runtime role can write the backup prefix but cannot delete objects. Database ports are not published.
+
+Install or refresh the timer with `scripts/cloud/install-aws-backups.ps1 -InstanceId <id>`. Restore into fresh PostgreSQL 16 databases using `pg_restore --no-owner --no-privileges`, provision the SSM environment, and match image versions to schema versions before starting traffic. Never use `docker compose down -v` or remove `/opt/realtime-pix/data/postgres` without a verified off-host backup.

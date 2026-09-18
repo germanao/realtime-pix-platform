@@ -1,4 +1,3 @@
-using Azure.Monitor.OpenTelemetry.AspNetCore;
 using RealtimePix.ApiGateway.Api;
 using RealtimePix.ApiGateway.Application;
 using RealtimePix.ApiGateway.Infrastructure;
@@ -7,7 +6,6 @@ using RealtimePix.Eventing;
 const string ServiceName = "api-gateway";
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration.AddRealtimePixAzureAppConfiguration();
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
@@ -19,11 +17,6 @@ builder.Services.AddProblemDetails(options =>
 builder.Services.AddOpenApi();
 builder.Services.AddCors();
 builder.Services.AddGatewayInfrastructure();
-if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-{
-    builder.Services.AddOpenTelemetry().UseAzureMonitor();
-}
-
 var app = builder.Build();
 app.UseExceptionHandler();
 app.UseCors(policy => policy

@@ -5,8 +5,4 @@
     <ProjectReference Include="..\..\..\building-blocks\dotnet\RealtimePix.Eventing\RealtimePix.Eventing.csproj" />
     <ProjectReference Include="..\..\..\building-blocks\dotnet\RealtimePix.Web\RealtimePix.Web.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
-    <PackageReference Include="Microsoft.Azure.SignalR" />
-  </ItemGroup>
 </Project>

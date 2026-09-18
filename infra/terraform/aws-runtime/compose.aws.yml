@@ -11,10 +11,6 @@ x-common: &common
     ASPNETCORE_ENVIRONMENT: Production
     ASPNETCORE_URLS: http://0.0.0.0:8080
     ASPNETCORE_HTTP_PORTS: "8080"
-    AppConfiguration__Endpoint: ""
-    APPLICATIONINSIGHTS_CONNECTION_STRING: ""
-    AzureSignalR__ConnectionString: ""
-    Postgres__UseManagedIdentity: "false"
     EventBus__Provider: Postgres
     EventBus__ConnectionString: ${BUS_DB_CONNECTION}
     Cors__AllowedOrigins__0: https://realtime-pix-web.vercel.app
@@ -73,7 +69,7 @@ services:
     environment:
       <<: *common-env
       ConnectionStrings__Default: ${TRANSACTION_DB_CONNECTION}
-      EventBus__ServiceBus__SubscriptionName: transaction
+      EventBus__ConsumerName: transaction
       Saga__AllowFailureSimulation: "true"
       Saga__StepTimeoutSeconds: "30"
       Saga__SimulatedCreditTimeoutSeconds: "8"
@@ -85,7 +81,7 @@ services:
     environment:
       <<: *common-env
       ConnectionStrings__Default: ${REALTIME_DB_CONNECTION}
-      EventBus__ServiceBus__SubscriptionName: realtime-events-v2
+      EventBus__ConsumerName: realtime-events-v2
   api-gateway:
     <<: *common
     image: ghcr.io/germanao/realtime-pix-api-gateway:${RUNTIME_IMAGE_TAG:-aws-latest}

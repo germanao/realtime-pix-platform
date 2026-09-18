@@ -1,19 +1,18 @@
-# ADR-005: Separate Terraform Stacks and Profiles
+# ADR-005: Keep One Explicit Demo Infrastructure Stack
 
 **Status:** Accepted
 
 ## Context
 
-State infrastructure, long-lived data services, and frequently changing application revisions have different risk and lifecycle. A single state would increase blast radius.
+The showcase has one supported AWS topology. Keeping retired cloud stacks beside it makes reviews ambiguous and can accidentally recreate billable resources.
 
 ## Decision
 
-Use bootstrap, foundation, and runtime roots with separate Azure Blob keys. Compose typed modules for repeated resources. Track a low-cost POC profile and a non-deployed production reference. Use moved blocks for refactors and GitHub OIDC identities with separate plan, image, and apply permissions. Bootstrap remains an owner-operated local action and is excluded from GitHub apply workflows so automation cannot grant or expand its own trust.
+Keep one Terraform root for the on-demand AWS runtime. Use a private S3 backend configured at `terraform init`, keep application releases separate from infrastructure changes, and require a reviewed plan before apply. Publish application images to GHCR and update the host through SSM.
 
 ## Consequences
 
 - Routine releases do not recreate databases or state storage.
-- Cross-stack outputs are explicit, but apply order matters.
-- Modules reduce duplication without pretending every environment is identical.
-- Bootstrap changes require an authenticated subscription owner and a reviewed local plan.
-- Production reference must be reviewed and adapted before real use; it is not an automatic best-practice certificate.
+- The repository has one unambiguous, testable deployment path.
+- Backend bucket configuration remains account-specific and outside source control.
+- This demo stack is not a production reference architecture.

@@ -1,4 +1,3 @@
-using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics;
 using RealtimePix.BankLedger.Api;
 using RealtimePix.BankLedger.Application;
@@ -7,7 +6,6 @@ using RealtimePix.Contracts;
 using RealtimePix.Eventing;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration.AddRealtimePixAzureAppConfiguration();
 
 var bankId = builder.Configuration["Bank:Id"] ?? BankIds.BankA;
 var queueName = BankIds.QueueName(bankId);
@@ -15,11 +13,6 @@ var defaults = new Dictionary<string, string?>();
 if (string.IsNullOrWhiteSpace(builder.Configuration["EventBus:QueueName"]))
 {
     defaults["EventBus:QueueName"] = queueName;
-}
-
-if (string.IsNullOrWhiteSpace(builder.Configuration["EventBus:ServiceBus:QueueName"]))
-{
-    defaults["EventBus:ServiceBus:QueueName"] = queueName;
 }
 
 if (defaults.Count > 0)
@@ -38,11 +31,6 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddOpenApi();
 builder.Services.AddCors();
-if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-{
-    builder.Services.AddOpenTelemetry().UseAzureMonitor();
-}
-
 builder.Services.AddRealtimePixEventBus(builder.Configuration, serviceName);
 builder.Services.AddBankLedger(builder.Configuration);
 

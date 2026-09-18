@@ -10,23 +10,16 @@ public static class EventingServiceCollectionExtensions
         IConfiguration configuration,
         string consumerName)
     {
-        var provider = configuration.GetValue<string>("EventBus:Provider") ?? "File";
-        if (provider.Equals("ServiceBus", StringComparison.OrdinalIgnoreCase))
-        {
-            return services.AddRealtimePixServiceBusEventBus(configuration, consumerName);
-        }
+        services.Configure<EventBusConsumerOptions>(options =>
+            options.ConsumerName = configuration["EventBus:ConsumerName"]
+                ?? configuration["EventBus:QueueName"]
+                ?? consumerName);
 
+        var provider = configuration.GetValue<string>("EventBus:Provider") ?? "File";
         if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
         {
             services.Configure<PostgresEventBusOptions>(configuration.GetSection("EventBus"));
             services.PostConfigure<PostgresEventBusOptions>(options => options.ConsumerName = consumerName);
-            // Preserve inbox consumer keys from the previous transport at cutover.
-            services.Configure<ServiceBusEventBusOptions>(configuration.GetSection("EventBus:ServiceBus"));
-            services.PostConfigure<ServiceBusEventBusOptions>(options =>
-            {
-                options.QueueName ??= configuration["EventBus:QueueName"];
-                options.SubscriptionName ??= consumerName;
-            });
             services.AddSingleton<PostgresEventBus>();
             services.AddSingleton<IIntegrationEventPublisher>(sp => sp.GetRequiredService<PostgresEventBus>());
             services.AddSingleton<IIntegrationMessagePublisher>(sp => sp.GetRequiredService<PostgresEventBus>());
@@ -63,50 +56,4 @@ public static class EventingServiceCollectionExtensions
         return services;
     }
 
-    private static IServiceCollection AddRealtimePixServiceBusEventBus(
-        this IServiceCollection services,
-        IConfiguration configuration,
-        string consumerName)
-    {
-        services.Configure<ServiceBusEventBusOptions>(configuration.GetSection("EventBus:ServiceBus"));
-        services.PostConfigure<ServiceBusEventBusOptions>(options =>
-        {
-            options.SubscriptionName = string.IsNullOrWhiteSpace(options.SubscriptionName)
-                ? ResolveSubscriptionName(consumerName)
-                : options.SubscriptionName;
-        });
-
-        services.AddSingleton(serviceProvider =>
-        {
-            var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ServiceBusEventBusOptions>>().Value;
-            return ServiceBusClientFactory.Create(options);
-        });
-        services.AddSingleton<ServiceBusIntegrationEventPublisher>();
-        services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
-            serviceProvider.GetRequiredService<ServiceBusIntegrationEventPublisher>());
-        services.AddSingleton<IIntegrationMessagePublisher>(serviceProvider =>
-            serviceProvider.GetRequiredService<ServiceBusIntegrationEventPublisher>());
-        services.AddSingleton<IIntegrationEnvelopeTransport>(serviceProvider =>
-            serviceProvider.GetRequiredService<ServiceBusIntegrationEventPublisher>());
-        services.AddSingleton<IEventBusReadinessProbe, ServiceBusReadinessProbe>();
-
-        if (!string.IsNullOrWhiteSpace(ResolveSubscriptionName(consumerName)) ||
-            !string.IsNullOrWhiteSpace(configuration["EventBus:ServiceBus:QueueName"]))
-        {
-            services.AddHostedService<ServiceBusEventBusWorker>();
-        }
-
-        return services;
-    }
-
-    private static string? ResolveSubscriptionName(string consumerName)
-    {
-        return consumerName switch
-        {
-            "wallet-ledger-service" => "wallet-ledger",
-            "transaction-service" => "transaction",
-            "realtime-events-service" => "realtime-events",
-            _ => null
-        };
-    }
 }

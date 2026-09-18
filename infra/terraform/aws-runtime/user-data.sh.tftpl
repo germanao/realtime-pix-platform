@@ -71,6 +71,6 @@ WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
 systemctl enable realtime-pix.service
-# Existing data must first be restored using migrate-to-aws.py or the private
-# S3 backups. No implicit empty database reset is performed by this bootstrap.
+# Existing data must be restored from a verified private S3 backup before a
+# replacement host is started. Bootstrap never resets databases implicitly.
 systemctl start realtime-pix.service || true

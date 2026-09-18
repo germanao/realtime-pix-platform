@@ -213,7 +213,7 @@ export function useRealtimePixPlatform() {
         try { await keepRuntimeAwake(controller.signal); }
         catch (failure) {
           if (failure instanceof HttpError && failure.status === 409 && !controller.signal.aborted) {
-            // Close the session and show the daily-limit notice; Azure is retired.
+            // Close the session and show the daily-limit notice; there is no fallback runtime.
             resetRuntime();
             // The old tab lease can finish leaving after the new runtime joins.
             // Give the replacement a different lease so a late beacon cannot remove it.
@@ -264,7 +264,7 @@ export function useRealtimePixPlatform() {
         );
 
         if (item.transferId === transferIdRef.current) {
-          if (item.eventType === "PixTransferCompleted.v1" || item.eventType === "PixTransferFailed.v1") {
+          if (item.eventType === "PixTransferCompleted.v2" || item.eventType === "PixTransferFailed.v2") {
             void api<Transfer>(`/pix/transfers/${item.transferId}`)
               .then(setTransfer)
               .catch((syncError: unknown) =>

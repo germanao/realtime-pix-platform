@@ -1,4 +1,3 @@
-using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using RealtimeEvents.Api;
 using RealtimeEvents.Application;
@@ -6,7 +5,6 @@ using RealtimeEvents.Infrastructure;
 using RealtimePix.Eventing;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration.AddRealtimePixAzureAppConfiguration();
 builder.Services.AddProblemDetails();
 builder.Services.AddCors(options =>
 {
@@ -16,33 +14,7 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod()
             .AllowCredentials());
 });
-if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-{
-    builder.Services.AddOpenTelemetry().UseAzureMonitor();
-}
-
-var signalRBuilder = builder.Services.AddSignalR();
-var azureSignalRConnectionString = builder.Configuration["AzureSignalR:ConnectionString"];
-if (!string.IsNullOrWhiteSpace(azureSignalRConnectionString))
-{
-    signalRBuilder.AddAzureSignalR(options =>
-    {
-        options.ConnectionString = azureSignalRConnectionString;
-        options.InitialHubServerConnectionCount = 1;
-        options.MaxHubServerConnectionCount = 1;
-    });
-}
-else if (builder.Configuration["AzureSignalR:Endpoint"] is { Length: > 0 } signalREndpoint)
-{
-    var clientId = builder.Configuration["AZURE_CLIENT_ID"]
-        ?? throw new InvalidOperationException("AZURE_CLIENT_ID is required for Azure SignalR managed identity authentication.");
-    signalRBuilder.AddAzureSignalR(options =>
-    {
-        options.ConnectionString = $"Endpoint={signalREndpoint};AuthType=azure.msi;ClientId={clientId};Version=1.0;";
-        options.InitialHubServerConnectionCount = 1;
-        options.MaxHubServerConnectionCount = 1;
-    });
-}
+builder.Services.AddSignalR();
 
 builder.Services.AddRealtimeEventsInfrastructure(builder.Configuration);
 builder.Services.AddSingleton<IRealtimeTransportReadinessProbe, HubTransportReadinessProbe>();
@@ -87,7 +59,7 @@ app.MapGet("/events/transfers/{transferId}/flow", async (
     Results.Ok(await store.GetFlowAsync(transferId, cancellationToken)));
 app.MapGet("/realtime/token", () => Results.Ok(new
 {
-    mode = string.IsNullOrWhiteSpace(azureSignalRConnectionString) ? "direct-signalr" : "azure-signalr",
+    mode = "direct-signalr",
     channel = "public-event-timeline",
     expiresAt = DateTimeOffset.UtcNow.AddMinutes(30)
 }));
