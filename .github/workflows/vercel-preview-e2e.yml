@@ -30,18 +30,14 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Create a temporary Vercel automation bypass
+      - name: Load the Vercel automation bypass
         shell: bash
         run: |
-          payload='{"generate":{"note":"GitHub Actions preview E2E"}}'
           response="$(curl --fail-with-body --silent --show-error \
-            --request PATCH \
             --header "Authorization: Bearer $VERCEL_API_TOKEN" \
-            --header "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG")"
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_NAME?slug=$VERCEL_TEAM_SLUG")"
           bypass_secret="$(jq -er \
-            '[.protectionBypass | to_entries[] | select(.value.note == "GitHub Actions preview E2E")] | max_by(.value.createdAt).key' \
+            '[.protectionBypass | to_entries[] | select(.value.scope == "automation-bypass" and .value.isEnvVar != false)] | first.key' \
             <<< "$response")"
           echo "::add-mask::$bypass_secret"
           echo "VERCEL_AUTOMATION_BYPASS_SECRET=$bypass_secret" >> "$GITHUB_ENV"
@@ -49,15 +45,3 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: ${{ github.event.deployment_status.target_url }}
         run: npm run test:e2e
-      - name: Revoke the temporary Vercel automation bypass
-        if: always() && env.VERCEL_AUTOMATION_BYPASS_SECRET != ''
-        shell: bash
-        run: |
-          payload="$(jq -nc --arg secret "$VERCEL_AUTOMATION_BYPASS_SECRET" \
-            '{revoke:{secret:$secret}}')"
-          curl --fail-with-body --silent --show-error \
-            --request PATCH \
-            --header "Authorization: Bearer $VERCEL_API_TOKEN" \
-            --header "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG" >/dev/null
