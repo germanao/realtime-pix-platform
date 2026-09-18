@@ -43,7 +43,7 @@ public sealed class EfCoreEventingTests
         await using var dbContext = CreateDbContext();
         var inbox = new EfCoreIntegrationInbox<TestEventingDbContext>(
             dbContext,
-            Options.Create(new ServiceBusEventBusOptions { SubscriptionName = "wallet-ledger" }));
+            Options.Create(new EventBusConsumerOptions { ConsumerName = "wallet-ledger" }));
         var envelope = new EventEnvelope(
             Guid.NewGuid(),
             EventTypes.PixTransferRequested,

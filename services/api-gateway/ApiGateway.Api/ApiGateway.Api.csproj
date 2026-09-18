@@ -6,7 +6,6 @@
     <ProjectReference Include="..\..\..\building-blocks\dotnet\RealtimePix.Web\RealtimePix.Web.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.OpenApi" />
   </ItemGroup>

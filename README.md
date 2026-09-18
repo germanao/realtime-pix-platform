@@ -1,90 +1,64 @@
-# Real-Time PIX Event Platform
+# Real-Time PIX Platform
 
-An educational, real-time money-transfer platform built with .NET 10, Next.js 16, PostgreSQL, Azure Service Bus, SignalR, and Terraform. It demonstrates an orchestrated Saga across two independently transactional fictional banks. It does not integrate with real PIX or hold real money.
+[Live demo](https://realtime-pix-web.vercel.app) · [.NET 10](https://dotnet.microsoft.com/) · [Next.js 16](https://nextjs.org/) · PostgreSQL · SignalR · Terraform
 
-Users join anonymously, receive accounts at two banks, deposit fictional funds, transfer to other participants or bots, and watch persisted Saga transitions move through the system in real time.
+An educational, real-time money-transfer platform that demonstrates an orchestrated Saga across two independently transactional fictional banks. It does not connect to Brazil's real PIX network and never holds real money.
 
-## What This Demonstrates
+## What it demonstrates
 
-- Seven independently deployable workloads from one monorepo.
-- An orchestrated Saga with debit, credit, compensation, timeout, and manual-intervention paths.
-- Database-per-service ownership: Identity, Bank A, Bank B, Transaction, and Realtime Projection.
-- Transactional EF Core outboxes, durable inbox deduplication, optimistic Saga concurrency, and atomic conditional debits.
-- CloudEvents 1.0-style, versioned integration contracts over Azure Service Bus.
-- Clean Architecture dependency rules enforced by xUnit.
-- Azure infrastructure split into bootstrap, foundation, and runtime Terraform states.
-- A validated but intentionally non-deployed private production reference profile.
-- Dependency-aware readiness for PostgreSQL, Service Bus, Azure SignalR, Gateway dependencies, and Bot dependencies.
+- Cross-bank debit, credit, compensation, and manual-intervention Saga paths.
+- Transactional outbox/inbox delivery over a durable PostgreSQL event bus.
+- Idempotent commands, optimistic concurrency, and ledger-level money invariants.
+- Live presence and transfer visualization over ASP.NET Core SignalR.
+- Clean Architecture boundaries enforced by automated tests.
+- An on-demand AWS demo runtime that starts from the browser and stops after inactivity.
 
-## Runtime Topology
+## Production topology
 
-| Workload | Responsibility | State owner |
-| --- | --- | --- |
-| API Gateway | Public BFF, wallet aggregation, bank routing | None |
-| Identity/Presence | Anonymous sessions and live connections | Identity DB |
-| Bank A Ledger | Bank A balances and append-only ledger | Bank A DB |
-| Bank B Ledger | Bank B balances and append-only ledger | Bank B DB |
-| Transaction | Saga orchestration, deadlines, idempotency | Transaction DB |
-| Realtime Events | Timeline and transfer-flow projections | Realtime DB |
-| Bot maintenance job | Seeds and funds demo participants during deployment | None |
+The public frontend runs on Vercel. A CloudFront endpoint wakes an EC2-hosted Docker Compose runtime in `us-east-2`; nginx routes the API and direct SignalR connections. PostgreSQL 16 stores five service-owned databases plus the durable event bus. Images are published to GHCR. AWS SSM holds the runtime environment and S3 stores encrypted database backups and Terraform state.
 
-The same `bank-ledger-service` image is deployed twice with different bank configuration, identity, queue, and database. See [the architecture guide](docs/architecture/README.md) and [decision records](docs/architecture/decisions/README.md).
+Azure is not part of the running application. The repository intentionally contains only the current AWS/Vercel deployment path.
 
-## Run Locally
+See [architecture](docs/architecture/README.md), [deployment](docs/deployment/README.md), and [AWS runtime operations](infra/terraform/aws-runtime/README.md).
 
-Prerequisites: .NET 10 SDK, Node.js 24, and npm. Docker is optional for the default in-memory/file mode and required for integration tests.
+## Run locally
+
+Prerequisites: .NET 10 SDK, Node.js 24, and npm. Docker is needed for PostgreSQL mode and integration tests.
 
 ```powershell
-git clone https://github.com/germanao/realtime-pix-platform.git
-cd realtime-pix-platform
-
 dotnet restore RealtimePixPlatform.slnx
-dotnet build RealtimePixPlatform.slnx --configuration Release
+dotnet build RealtimePixPlatform.slnx -c Release
+dotnet test RealtimePixPlatform.slnx -c Release --no-build
 
 cd apps/web
 npm ci
 npm test -- --run
 npm run build
-cd ../..
+```
 
+Start all services with the lightweight file transport:
+
+```powershell
 node scripts/start-local.mjs --frontend
 ```
 
-Open `http://localhost:3000`. Logs are written under `work/runtime-logs`; local event envelopes are under `work/local-bus`. Stop all local processes with:
+Use `--with-postgres` to start the local PostgreSQL databases and apply EF migrations before launching the services.
 
-```powershell
-node scripts/stop-local.mjs
-```
+## Repository map
 
-The local default uses in-memory repositories and the JSONL event-bus adapter. Azure uses PostgreSQL, Service Bus, managed identity, and Azure SignalR through the same application ports.
+| Path | Purpose |
+| --- | --- |
+| `apps/web` | Next.js user experience and Playwright tests |
+| `services` | API Gateway, Identity/Presence, two-bank Ledger host, Transaction Saga, Realtime Events, and Bot worker |
+| `building-blocks/dotnet` | Shared eventing, persistence, and web-hosting adapters |
+| `contracts/dotnet` | Versioned integration contracts |
+| `infra/terraform/aws-runtime` | AWS on-demand runtime, controller, compose file, and backups |
+| `tests` | Unit, architecture, hosting, and PostgreSQL integration tests |
 
-To run all five local PostgreSQL databases, apply migrations, and inject their connections automatically, start Docker Desktop and add `--with-postgres`. Stop those containers with `node scripts/stop-local.mjs --with-postgres`.
+## Safety and scope
 
-## Verify
+The deployment is a small public demo, not a production banking system. It uses anonymous identities, synthetic balances, a single host, one replica per service, and a shared daily runtime allowance. Do not use it for personal data, real credentials, real financial transactions, or availability-sensitive workloads.
 
-```powershell
-dotnet test RealtimePixPlatform.slnx --configuration Release
+## License
 
-cd apps/web
-npm test -- --run
-npm run build
-```
-
-Run the Docker-backed PostgreSQL migration, concurrency, outbox/inbox, and official Service Bus emulator suite with:
-
-```powershell
-$env:RUN_INTEGRATION_TESTS = "true"
-dotnet test tests/RealtimePix.IntegrationTests/RealtimePix.IntegrationTests.csproj --configuration Release
-```
-
-CI also builds every deployable Docker image, validates/tests Terraform, runs architecture policies, and scans dependencies and infrastructure configuration.
-
-## Cloud Deployment
-
-The POC backend runs in Azure and the frontend deploys to Vercel. The POC profile scales every service to zero, caps replicas at one, and runs bot maintenance as an on-demand job to stay inside an eligible Azure account's free allowances. GitHub Actions authenticates to Azure through OIDC; no Azure client secret is stored in GitHub.
-
-- [Current deployment index](docs/deployment/README.md)
-- [Free-tier limits and operations](docs/deployment/free-tier.md)
-- [Azure and Terraform topology](docs/architecture/cloud-provisioning.md)
-- [Terraform stacks](infra/terraform)
-- [Production reference limitations](infra/terraform/production-reference/README.md)
+See [LICENSE](LICENSE).

@@ -99,7 +99,7 @@ public interface ISagaMessagePublisher
 
     Task PublishRefundCommandAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken);
 
-    Task PublishLegacyRequestedAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken);
+    Task PublishRequestedAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken);
 
     Task PublishTransitionAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken);
 

@@ -42,6 +42,18 @@ describe("api", () => {
 describe("runtime selection", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); });
 
+  it("uses the public AWS runtime for production builds without injected preview configuration", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_AWS_RUNTIME_URL", "");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ status: "ready" })));
+    const runtime = await import("./api");
+    await runtime.api("/health/ready");
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => url);
+    expect(urls).toEqual([
+      "https://djb1ah1j5qyrj.cloudfront.net/health/ready"
+    ]);
+  });
+
   it("wakes AWS outside office hours and pins every request to that runtime", async () => {
     vi.stubEnv("NEXT_PUBLIC_AWS_RUNTIME_URL", "https://aws.example");
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ status: "ready" }))));
@@ -53,7 +65,7 @@ describe("runtime selection", () => {
     expect(urls).toEqual(["https://aws.example/runtime/wake", "https://aws.example/health/ready", "https://aws.example/presence/users"]);
   });
 
-  it("reports the daily limit without contacting the retired Azure runtime", async () => {
+  it("reports the daily limit without contacting a fallback runtime", async () => {
     vi.stubEnv("NEXT_PUBLIC_AWS_RUNTIME_URL", "https://aws.example");
     vi.stubGlobal("fetch", vi.fn().mockImplementation((url: string) => Promise.resolve(
       url.endsWith("/runtime/wake") ? new Response("{}", { status: 409 }) : jsonResponse({ status: "ready" })

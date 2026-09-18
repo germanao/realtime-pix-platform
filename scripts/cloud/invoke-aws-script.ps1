@@ -1,9 +1,9 @@
 param(
     [Parameter(Mandatory = $true)][string]$ScriptPath,
-    [string]$InstanceId = 'i-0ae6f370495e59423',
+    [Parameter(Mandatory = $true)][string]$InstanceId,
     [string]$Region = 'us-east-2',
     [int]$TimeoutSeconds = 1800,
-    [string]$AwsCli = 'C:\Users\germa\AppData\Local\Programs\Amazon\AWSCLIV2-Portable\Amazon\AWSCLIV2\aws.exe'
+    [string]$AwsCli = 'aws'
 )
 $ErrorActionPreference = 'Stop'
 # Refresh through the login session's own region, then use ephemeral credentials
@@ -15,5 +15,5 @@ $env:AWS_SECRET_ACCESS_KEY = $runtimeCredentials.SecretAccessKey
 $env:AWS_SESSION_TOKEN = $runtimeCredentials.SessionToken
 $script = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $ScriptPath)).Replace("`r`n", "`n")
 $parameters = @{ commands = @($script); executionTimeout = @("$TimeoutSeconds") } | ConvertTo-Json -Compress
-& $AwsCli ssm send-command --region $Region --instance-ids $InstanceId --document-name AWS-RunShellScript --comment 'Realtime PIX AWS migration operation' --parameters $parameters --query 'Command.CommandId' --output text
+& $AwsCli ssm send-command --region $Region --instance-ids $InstanceId --document-name AWS-RunShellScript --comment 'Realtime PIX maintenance operation' --parameters $parameters --query 'Command.CommandId' --output text
 if ($LASTEXITCODE -ne 0) { throw 'SSM command submission failed.' }

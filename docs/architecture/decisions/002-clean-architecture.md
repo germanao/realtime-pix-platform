@@ -12,7 +12,7 @@ Each service uses Domain, Application, Infrastructure, and host projects. Domain
 
 ## Consequences
 
-- Domain rules run without Azure, EF, HTTP, or a broker.
-- Infrastructure can switch between local and Azure adapters.
+- Domain rules run without EF, HTTP, or a broker.
+- Infrastructure can switch between the local file and PostgreSQL transport adapters.
 - More projects and explicit mappings add ceremony.
 - xUnit architecture checks make the dependency rule executable rather than aspirational.

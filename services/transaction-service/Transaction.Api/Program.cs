@@ -1,4 +1,3 @@
-using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics;
 using RealtimePix.Eventing;
 using RealtimePix.Transaction.Application;
@@ -7,7 +6,6 @@ using RealtimePix.Transaction.Infrastructure;
 const string ServiceName = "transaction-service";
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration.AddRealtimePixAzureAppConfiguration();
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
@@ -18,11 +16,6 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddOpenApi();
 builder.Services.AddCors();
-if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-{
-    builder.Services.AddOpenTelemetry().UseAzureMonitor();
-}
-
 builder.Services.AddRealtimePixEventBus(builder.Configuration, ServiceName);
 builder.Services.AddTransferSaga(builder.Configuration);
 

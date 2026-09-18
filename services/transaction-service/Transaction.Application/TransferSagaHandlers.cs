@@ -59,7 +59,7 @@ public sealed class CreateTransferHandler(
             {
                 await repository.AddAsync(started.Saga, started.Transition, innerCancellationToken);
                 await publisher.PublishTransitionAsync(started.Saga, started.Transition, innerCancellationToken);
-                await publisher.PublishLegacyRequestedAsync(started.Saga, started.Transition, innerCancellationToken);
+                await publisher.PublishRequestedAsync(started.Saga, started.Transition, innerCancellationToken);
                 await publisher.PublishDebitCommandAsync(started.Saga, started.Transition, innerCancellationToken);
             }, cancellationToken);
         }

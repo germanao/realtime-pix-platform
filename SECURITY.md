@@ -1,22 +1,20 @@
-# Security Policy
+# Security policy
 
-This repository is intended to be public and safe to clone for local demos.
+This repository is public and intended for a synthetic-money demonstration only.
 
-## Secret Handling
+## Secret handling
 
-- Do not commit `.env`, Terraform state, `.tfvars`, local event-bus files, test
-  outputs, database dumps, Key Vault exports, or cloud credentials.
-- Use GitHub Actions OIDC for Azure authentication. Do not create or commit an
-  Azure client secret for CI/CD.
-- Store runtime secrets in Azure Key Vault or protected GitHub environment
-  secrets.
-- Values prefixed with `NEXT_PUBLIC_` are browser-visible and must never contain
-  secrets.
-- Deployment scripts may be public when they read secrets from prompts, Azure Key
-  Vault, or GitHub secrets at runtime.
+- Never commit `.env` files, Terraform state, `.tfvars`, database dumps, private keys, cloud credentials, origin-header values, or SSM exports.
+- Store runtime secrets in AWS Systems Manager Parameter Store and CI secrets in protected GitHub environments.
+- Use short-lived or workload credentials for automation; do not create long-lived cloud keys for GitHub Actions.
+- Treat every `NEXT_PUBLIC_` value as browser-visible. It must never contain a secret.
+- Deploy commit-pinned images and keep production configuration out of container images.
+- Rotate any exposed credential immediately, then remove it from both the current tree and Git history as appropriate.
+
+## Supported security boundary
+
+The live environment is a ten-user showcase with anonymous synthetic identities and fictional balances. It is not approved for personal data, real financial information, real PIX transactions, regulated workloads, or production availability requirements.
 
 ## Reporting
 
-If you find a credential, private endpoint, or sensitive operational value in
-the repository, rotate it immediately and open an issue describing the affected
-file and commit range without pasting the secret value.
+Report vulnerabilities privately through GitHub's security-advisory feature. Include affected versions and reproduction steps, but do not paste live credentials or sensitive operational values into a public issue.

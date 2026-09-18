@@ -22,7 +22,14 @@ cat > "${body}" <<JSON
       "Backend build and tests",
       "Frontend build and tests",
       "Terraform format and validate",
-      "Dockerfile checks"
+      "AWS wake controller tests",
+      "Build service images (api-gateway)",
+      "Build service images (identity-presence)",
+      "Build service images (bank-ledger)",
+      "Build service images (transaction)",
+      "Build service images (realtime-events)",
+      "Build service images (bot)",
+      "Public repository hygiene"
     ]
   },
   "enforce_admins": false,

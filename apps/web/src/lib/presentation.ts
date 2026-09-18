@@ -165,7 +165,7 @@ export function describeCommunityEvent(
     };
   }
 
-  if (event.eventType === "PixTransferCompleted.v1") {
+  if (event.eventType === "PixTransferCompleted.v2") {
     const sender = userName(payloadString(event, "senderUserId"));
     const recipient = userName(payloadString(event, "recipientUserId"));
     const amount = payloadNumber(event, "amount") ?? 0;
@@ -178,7 +178,7 @@ export function describeCommunityEvent(
     };
   }
 
-  if (event.eventType === "PixTransferFailed.v1") {
+  if (event.eventType === "PixTransferFailed.v2") {
     const sender = userName(payloadString(event, "senderUserId"));
     return {
       id: event.eventId,

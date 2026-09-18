@@ -28,7 +28,7 @@ public sealed class FileEventBusWorkerTests
                 EventTypes.UserPresenceChanged,
                 1,
                 "identity-presence-service",
-                new UserPresenceChangedPayload("user-a", "Azure Ledger", true, false, DateTimeOffset.UtcNow),
+                new UserPresenceChangedPayload("user-a", "Aurora Ledger", true, false, DateTimeOffset.UtcNow),
                 correlationId: "user-a",
                 cancellationToken: CancellationToken.None);
 
@@ -65,7 +65,7 @@ public sealed class FileEventBusWorkerTests
                     EventTypes.UserPresenceChanged,
                     1,
                     "identity-presence-service",
-                    new UserPresenceChangedPayload("user-a", "Azure Ledger", true, false, DateTimeOffset.UtcNow),
+                    new UserPresenceChangedPayload("user-a", "Aurora Ledger", true, false, DateTimeOffset.UtcNow),
                     correlationId: "user-a",
                     cancellationToken: CancellationToken.None);
                 await WaitUntilAsync(() => firstHandler.Envelopes.Count == 1);

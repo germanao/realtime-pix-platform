@@ -1,4 +1,8 @@
-param([string]$AwsCli = 'C:\Users\germa\AppData\Local\Programs\Amazon\AWSCLIV2-Portable\Amazon\AWSCLIV2\aws.exe')
+param(
+    [Parameter(Mandatory = $true)][string]$InstanceId,
+    [string]$Region = 'us-east-2',
+    [string]$AwsCli = 'aws'
+)
 $ErrorActionPreference = 'Stop'
 $credentials = (& $AwsCli configure export-credentials --format process | ConvertFrom-Json)
 if ($LASTEXITCODE -ne 0) { throw 'AWS login required.' }
@@ -39,5 +43,5 @@ systemctl start realtime-pix-backup.service
 systemctl show realtime-pix-backup.service -p Result
 "@
 $parameters = @{commands = @($script); executionTimeout = @('600')} | ConvertTo-Json -Compress
-& $AwsCli ssm send-command --region us-east-2 --instance-ids i-0ae6f370495e59423 --document-name AWS-RunShellScript --comment 'Install and verify private AWS database backups' --parameters $parameters --query 'Command.CommandId' --output text
+& $AwsCli ssm send-command --region $Region --instance-ids $InstanceId --document-name AWS-RunShellScript --comment 'Install and verify private AWS database backups' --parameters $parameters --query 'Command.CommandId' --output text
 if ($LASTEXITCODE -ne 0) { throw 'Backup installation failed to submit.' }
