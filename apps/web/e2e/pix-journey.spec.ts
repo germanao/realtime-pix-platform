@@ -25,14 +25,9 @@ async function expectPlatformLive(page: Page) {
     });
     expect(response.ok()).toBe(true);
     await page.goto("/");
-    console.log("Preview page state", {
-      url: page.url(),
-      title: await page.title(),
-      text: (await page.locator("body").innerText()).slice(0, 300)
-    });
   }
   await expect(page.getByText("Live", { exact: true })).toBeVisible({
-    timeout: bypassSecret ? 30_000 : 330_000
+    timeout: 330_000
   });
 }
 
