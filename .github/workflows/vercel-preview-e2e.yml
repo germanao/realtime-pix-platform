@@ -40,7 +40,9 @@ jobs:
             --header "Content-Type: application/json" \
             --data "$payload" \
             "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_NAME/protection-bypass?slug=$VERCEL_TEAM_SLUG")"
-          bypass_secret="$(jq -er '.protectionBypass.secret' <<< "$response")"
+          bypass_secret="$(jq -er \
+            'if (.protectionBypass | type) == "string" then .protectionBypass else .protectionBypass.secret end' \
+            <<< "$response")"
           echo "::add-mask::$bypass_secret"
           echo "VERCEL_AUTOMATION_BYPASS_SECRET=$bypass_secret" >> "$GITHUB_ENV"
       - name: Run preview E2E
