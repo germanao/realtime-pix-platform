@@ -207,6 +207,7 @@ function ServiceNode({ data }: NodeProps<ServiceFlowNode>) {
 
 const nodeTypes = { service: ServiceNode };
 const playbackStepMilliseconds = 1200;
+export const flowNodeDimensions = { width: 168, height: 84 } as const;
 
 export function TransactionMap({
   expertMode,
@@ -287,6 +288,11 @@ export function TransactionMap({
         id: nodeId,
         position: positions[nodeId],
         type: "service",
+        // React Flow otherwise relies solely on ResizeObserver measurements.
+        // Rapid transfer/playback updates can replace those measurements and
+        // make every node `visibility: hidden` until the page is reloaded.
+        initialWidth: flowNodeDimensions.width,
+        initialHeight: flowNodeDimensions.height,
         data: {
           nodeId,
           label: labels[nodeId][0],
