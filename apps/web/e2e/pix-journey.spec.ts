@@ -26,7 +26,9 @@ async function expectPlatformLive(page: Page) {
     expect(response.ok()).toBe(true);
     await page.goto("/");
   }
-  await expect(page.getByText("Live", { exact: true })).toBeVisible({ timeout: 330_000 });
+  await expect(page.getByText("Live", { exact: true })).toBeVisible({
+    timeout: bypassSecret ? 180_000 : 330_000
+  });
 }
 
 async function expectProceduralReplay(page: Page) {
