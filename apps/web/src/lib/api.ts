@@ -3,7 +3,10 @@ import { HttpError, requestJson, retryStartup } from "./startup";
 const localApiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5100";
 const localPresenceHubUrl = process.env.NEXT_PUBLIC_PRESENCE_HUB_URL ?? "http://localhost:5101/presence/hub";
 const localEventsHubUrl = process.env.NEXT_PUBLIC_EVENTS_HUB_URL ?? "http://localhost:5104/events/hub";
-const awsRuntimeBase = process.env.NEXT_PUBLIC_AWS_RUNTIME_URL?.trim().replace(/\/$/, "");
+const defaultProductionRuntime = "https://djb1ah1j5qyrj.cloudfront.net";
+const configuredRuntime = process.env.NEXT_PUBLIC_AWS_RUNTIME_URL?.trim().replace(/\/$/, "");
+const awsRuntimeBase = configuredRuntime ||
+  (process.env.NODE_ENV === "production" ? defaultProductionRuntime : undefined);
 // A page's HTTP requests and hub must stay on the same runtime. Never change it on a TTL.
 let selectedBase: string | undefined;
 let preparation: Promise<void> | undefined;
