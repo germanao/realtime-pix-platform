@@ -14,6 +14,18 @@ const primaryJourneyOrder = [
 ] as const;
 
 async function expectPlatformLive(page: Page) {
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL;
+  if (bypassSecret && baseUrl) {
+    const response = await page.context().request.get(baseUrl, {
+      headers: {
+        "x-vercel-protection-bypass": bypassSecret,
+        "x-vercel-set-bypass-cookie": "true"
+      }
+    });
+    expect(response.ok()).toBe(true);
+    await page.goto("/");
+  }
   await expect(page.getByText("Live", { exact: true })).toBeVisible({ timeout: 330_000 });
 }
 
