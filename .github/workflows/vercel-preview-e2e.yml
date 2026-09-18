@@ -11,10 +11,7 @@ jobs:
     name: Vercel preview E2E
     if: >-
       github.event.deployment_status.state == 'success' &&
-      github.event.deployment.ref != 'main' &&
-      contains(github.event.deployment.environment, 'Preview') &&
-      contains(github.event.deployment_status.target_url, 'realtime-pix-web') &&
-      contains(github.event.deployment_status.target_url, 'vercel.app')
+      github.event.deployment.environment == 'Preview – realtime-pix-web'
     runs-on: ubuntu-latest
     defaults:
       run:
