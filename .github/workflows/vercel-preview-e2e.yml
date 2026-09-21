@@ -11,7 +11,9 @@ jobs:
     name: Vercel preview E2E
     if: >-
       github.event.deployment_status.state == 'success' &&
-      startsWith(github.event.deployment.environment, 'Preview')
+      startsWith(github.event.deployment.environment, 'Preview') &&
+      startsWith(github.event.deployment_status.target_url, 'https://realtime-pix-') &&
+      !startsWith(github.event.deployment_status.target_url, 'https://realtime-pix-platform-')
     runs-on: ubuntu-latest
     environment: poc
     env:
