@@ -101,7 +101,7 @@ test("simple mode sends one PIX, preserves context in Expert mode, and grants we
   await page.getByRole("switch", { name: "Expert mode" }).click();
   await expect(page.getByRole("heading", { name: "Emit PIX transfer" })).toBeVisible();
   await expect(page.getByText("completed", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Recipient", { exact: true })).toHaveValue("bot-aurora-ledger");
+  await expect(page.getByRole("combobox", { name: "Recipient" }).first()).toHaveValue("bot-aurora-ledger");
   await expect(page.getByRole("textbox", { name: "Amount" })).toHaveValue("25");
 
   await page.reload();
