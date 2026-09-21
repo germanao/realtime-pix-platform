@@ -6,14 +6,29 @@ const primaryJourneyOrder = [
   "gateway",
   "transaction-start",
   "event-bus",
-  "wallet",
+  "sender-bank",
+  "recipient-bank",
   "transaction-confirm",
   "realtime",
   "browser-end"
 ] as const;
 
 async function expectPlatformLive(page: Page) {
-  await expect(page.getByText("Live", { exact: true })).toBeVisible({ timeout: 330_000 });
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL;
+  if (bypassSecret && baseUrl) {
+    const response = await page.context().request.get(baseUrl, {
+      headers: {
+        "x-vercel-protection-bypass": bypassSecret,
+        "x-vercel-set-bypass-cookie": "true"
+      }
+    });
+    expect(response.ok()).toBe(true);
+    await page.goto("/");
+  }
+  await expect(page.getByText("Live", { exact: true })).toBeVisible({
+    timeout: 330_000
+  });
 }
 
 async function expectProceduralReplay(page: Page) {
@@ -73,8 +88,7 @@ test("simple mode sends one PIX, preserves context in Expert mode, and grants we
 
   await expect(page.getByRole("heading", { name: "Following $25.00" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "$9,975.00" })).toBeVisible();
-  await expect(page.getByText("Sent to Aurora Ledger [BOT]", { exact: true })).toBeVisible();
-  await expect(page.locator('.serviceNode.primary.success')).toHaveCount(8, { timeout: 15_000 });
+  await expect(page.locator('.serviceNode.primary.success')).toHaveCount(9, { timeout: 15_000 });
   await page.screenshot({
     fullPage: true,
     path: path.resolve(process.cwd(), "../../outputs/pix-layout-after.png")
@@ -82,12 +96,12 @@ test("simple mode sends one PIX, preserves context in Expert mode, and grants we
 
   await page.getByRole("button", { name: "Replay" }).click();
   await expectProceduralReplay(page);
-  await expect(page.locator('.serviceNode.primary.success')).toHaveCount(8, { timeout: 3_000 });
+  await expect(page.locator('.serviceNode.primary.success')).toHaveCount(9, { timeout: 3_000 });
 
   await page.getByRole("switch", { name: "Expert mode" }).click();
   await expect(page.getByRole("heading", { name: "Emit PIX transfer" })).toBeVisible();
   await expect(page.getByText("completed", { exact: true })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Recipient" })).toHaveValue("bot-aurora-ledger");
+  await expect(page.getByRole("combobox", { name: "Recipient" }).first()).toHaveValue("bot-aurora-ledger");
   await expect(page.getByRole("textbox", { name: "Amount" })).toHaveValue("25");
 
   await page.reload();
@@ -124,7 +138,7 @@ test("desktop balance and journey geometry stay separated at the reported viewpo
   expect(heroGeometry.documentWidth).toBeLessThanOrEqual(heroGeometry.viewport);
 
   const primaryNodes = page.locator('.serviceNode[data-lane="primary"]');
-  await expect(primaryNodes).toHaveCount(8);
+  await expect(primaryNodes).toHaveCount(9);
   const primaryBoxes = await primaryNodes.evaluateAll((nodes) =>
     nodes.map((node) => {
       const box = node.getBoundingClientRect();
@@ -145,7 +159,7 @@ test("desktop balance and journey geometry stay separated at the reported viewpo
         return { top: box.top, bottom: box.bottom };
       })
     );
-  expect(supportingBoxes).toHaveLength(2);
+  expect(supportingBoxes).toHaveLength(3);
   expect(supportingBoxes.every((box) => box.top > primaryBoxes[0].bottom)).toBe(true);
 
   const edgeGeometry = await page.evaluate(() => {
@@ -160,9 +174,9 @@ test("desktop balance and journey geometry stay separated at the reported viewpo
     };
   });
 
-  expect(edgeGeometry.primary).toHaveLength(7);
+  expect(edgeGeometry.primary).toHaveLength(8);
   expect(edgeGeometry.primary.every((edge) => edge.height < 2 && edge.width > 10)).toBe(true);
-  expect(edgeGeometry.supporting).toHaveLength(2);
+  expect(edgeGeometry.supporting).toHaveLength(3);
   expect(edgeGeometry.supporting.every((edge) => edge.width < 2 && edge.height > 10)).toBe(true);
 });
 

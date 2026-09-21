@@ -46,9 +46,6 @@
     <Project Path="services/transaction-service/Transaction.Infrastructure/Transaction.Infrastructure.csproj" />
     <Project Path="services/transaction-service/Transaction.Api/Transaction.Api.csproj" />
   </Folder>
-  <Folder Name="/services/wallet-ledger-service/">
-    <Project Path="services/wallet-ledger-service/WalletLedgerService.csproj" />
-  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BotService.Tests/BotService.Tests.csproj" />
     <Project Path="tests/BankLedgerService.Tests/BankLedgerService.Tests.csproj" />
@@ -58,7 +55,6 @@
     <Project Path="tests/RealtimePix.IntegrationTests/RealtimePix.IntegrationTests.csproj" />
     <Project Path="tests/RealtimeEventsService.Tests/RealtimeEventsService.Tests.csproj" />
     <Project Path="tests/TransactionService.Tests/TransactionService.Tests.csproj" />
-    <Project Path="tests/WalletLedgerService.Tests/WalletLedgerService.Tests.csproj" />
     <Project Path="tests/WebHosting.Tests/WebHosting.Tests.csproj" />
   </Folder>
 </Solution>

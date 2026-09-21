@@ -2,7 +2,6 @@ terraform {
   required_version = ">= 1.11.0"
 
   backend "s3" {
-    bucket       = "realtime-pix-tfstate-886781461608"
     key          = "poc/aws-runtime.tfstate"
     region       = "us-east-2"
     encrypt      = true
@@ -36,3 +35,5 @@ provider "aws" {
     }
   }
 }
+
+data "aws_caller_identity" "current" {}

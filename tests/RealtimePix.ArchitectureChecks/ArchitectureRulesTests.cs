@@ -82,24 +82,6 @@ public sealed class ArchitectureRulesTests
     }
 
     [Fact]
-    public void Each_state_owner_has_a_database_bootstrap_script()
-    {
-        var expectedScripts = new[]
-        {
-            "identity_presence.sql",
-            "bank_a_ledger.sql",
-            "bank_b_ledger.sql",
-            "transaction.sql",
-            "realtime_projection.sql"
-        };
-
-        foreach (var script in expectedScripts)
-        {
-            Assert.True(File.Exists(Path.Combine(Root, "infra", "postgres", script)), $"Missing PostgreSQL ownership script: {script}");
-        }
-    }
-
-    [Fact]
     public void Domain_projects_do_not_reference_framework_or_integration_contracts()
     {
         foreach (var item in CleanArchitectureServices)

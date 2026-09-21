@@ -116,7 +116,7 @@ public sealed class TransferSagaTests
         Assert.Single(results.Where(item => item.IsNew));
         Assert.Single(results.Select(item => item.Transfer.TransferId).Distinct());
         Assert.Equal(1, publisher.Count("debit-command"));
-        Assert.Equal(1, publisher.Count("legacy-requested"));
+        Assert.Equal(1, publisher.Count("requested"));
         Assert.Equal(1, publisher.Count("transition"));
     }
 
@@ -300,7 +300,7 @@ public sealed class TransferSagaTests
         public Task PublishDebitCommandAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken) => Add("debit-command");
         public Task PublishCreditCommandAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken) => Add("credit-command");
         public Task PublishRefundCommandAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken) => Add("refund-command");
-        public Task PublishLegacyRequestedAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken) => Add("legacy-requested");
+        public Task PublishRequestedAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken) => Add("requested");
         public Task PublishTransitionAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken) => Add("transition");
         public Task PublishCompletedAsync(TransferSaga saga, SagaTransition transition, CancellationToken cancellationToken) => Add("completed");
         public Task PublishFailedAsync(TransferSaga saga, SagaTransition transition, bool requiresManualIntervention, CancellationToken cancellationToken) => Add("failed");

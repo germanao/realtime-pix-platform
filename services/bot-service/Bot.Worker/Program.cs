@@ -1,15 +1,9 @@
-using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Bot.Application;
 using Bot.Infrastructure;
 using RealtimePix.Eventing;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration.AddRealtimePixAzureAppConfiguration();
 var runOnce = builder.Configuration.GetValue("Bot:RunOnce", false);
-if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-{
-    builder.Services.AddOpenTelemetry().UseAzureMonitor();
-}
 builder.Services.AddRealtimePixEventBus(builder.Configuration, BotMetadata.ServiceName);
 builder.Services.AddBotInfrastructure(builder.Configuration);
 if (!runOnce)

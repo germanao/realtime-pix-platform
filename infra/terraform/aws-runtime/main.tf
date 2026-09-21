@@ -20,42 +20,7 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
 locals {
   name               = "realtime-pix-${var.environment_name}"
   runtime_param_path = "/realtime-pix/${var.environment_name}"
-  repositories = toset([
-    "api-gateway",
-    "identity-presence-service",
-    "bank-ledger-service",
-    "transaction-service",
-    "realtime-events-service"
-  ])
-}
-
-# Retained after the AWS Free plan denied GitHub OIDC. They are empty and
-# harmless, and keeping them avoids destructive cleanup during recovery.
-resource "aws_ecr_repository" "service" {
-  for_each             = local.repositories
-  name                 = "realtime-pix/${each.key}"
-  image_tag_mutability = "IMMUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-}
-
-resource "aws_ecr_lifecycle_policy" "service" {
-  for_each   = aws_ecr_repository.service
-  repository = each.value.name
-  policy = jsonencode({
-    rules = [{
-      rulePriority = 1
-      description  = "Retain the ten newest demo images"
-      selection = {
-        tagStatus   = "any"
-        countType   = "imageCountMoreThan"
-        countNumber = 10
-      }
-      action = { type = "expire" }
-    }]
-  })
+  backup_bucket      = "realtime-pix-tfstate-${data.aws_caller_identity.current.account_id}"
 }
 
 resource "aws_iam_role" "runtime" {
@@ -89,12 +54,7 @@ resource "aws_iam_role_policy" "runtime" {
       {
         Effect   = "Allow"
         Action   = ["s3:PutObject"]
-        Resource = "arn:aws:s3:::realtime-pix-tfstate-886781461608/backups/aws-only/*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["ssm:PutParameter"]
-        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter${local.runtime_param_path}/aws-only-env"
+        Resource = "arn:aws:s3:::${local.backup_bucket}/backups/aws-only/*"
       }
     ]
   })
@@ -267,61 +227,6 @@ resource "aws_cloudfront_distribution" "runtime" {
   }
   viewer_certificate {
     cloudfront_default_certificate = true
-  }
-}
-
-resource "aws_iam_role" "scheduler" {
-  name = "${local.name}-scheduler"
-  assume_role_policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = [{ Effect = "Allow", Principal = { Service = "scheduler.amazonaws.com" }, Action = "sts:AssumeRole" }]
-  })
-}
-
-resource "aws_iam_role_policy" "scheduler" {
-  name = "${local.name}-scheduler"
-  role = aws_iam_role.scheduler.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["ec2:StartInstances", "ec2:StopInstances"]
-      Resource = aws_instance.runtime.arn
-    }]
-  })
-}
-
-resource "aws_scheduler_schedule" "start" {
-  state                        = "DISABLED"
-  name                         = "${local.name}-weekday-start"
-  schedule_expression          = "cron(40 8 ? * MON-FRI *)"
-  schedule_expression_timezone = "America/Sao_Paulo"
-  flexible_time_window { mode = "OFF" }
-  target {
-    arn      = "arn:aws:scheduler:::aws-sdk:ec2:startInstances"
-    role_arn = aws_iam_role.scheduler.arn
-    input    = jsonencode({ InstanceIds = [aws_instance.runtime.id] })
-    retry_policy {
-      maximum_event_age_in_seconds = 3600
-      maximum_retry_attempts       = 2
-    }
-  }
-}
-
-resource "aws_scheduler_schedule" "stop" {
-  state                        = "DISABLED"
-  name                         = "${local.name}-weekday-stop"
-  schedule_expression          = "cron(10 15 ? * MON-FRI *)"
-  schedule_expression_timezone = "America/Sao_Paulo"
-  flexible_time_window { mode = "OFF" }
-  target {
-    arn      = "arn:aws:scheduler:::aws-sdk:ec2:stopInstances"
-    role_arn = aws_iam_role.scheduler.arn
-    input    = jsonencode({ InstanceIds = [aws_instance.runtime.id] })
-    retry_policy {
-      maximum_event_age_in_seconds = 3600
-      maximum_retry_attempts       = 2
-    }
   }
 }
 

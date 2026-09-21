@@ -8,6 +8,11 @@ using Microsoft.Extensions.Options;
 
 namespace RealtimePix.Eventing;
 
+public sealed class EventBusConsumerOptions
+{
+    public string ConsumerName { get; set; } = "unknown-consumer";
+}
+
 public sealed class IntegrationOutboxMessage
 {
     public Guid Id { get; set; }
@@ -112,7 +117,7 @@ public sealed class EfCoreOutboxIntegrationEventPublisher<TContext>(
         string? causationId = null,
         CancellationToken cancellationToken = default)
     {
-        var topicName = configuration["EventBus:ServiceBus:TopicName"] ?? "platform-events";
+        var topicName = configuration["EventBus:TopicName"] ?? "platform-events";
         var envelope = IntegrationMessageFactory.Create(
             eventType,
             version,
@@ -178,7 +183,7 @@ public sealed class EfCoreOutboxIntegrationEventPublisher<TContext>(
 
 public sealed class EfCoreIntegrationInbox<TContext>(
     TContext dbContext,
-    IOptions<ServiceBusEventBusOptions> options) : IIntegrationInbox
+    IOptions<EventBusConsumerOptions> options) : IIntegrationInbox
     where TContext : DbContext
 {
     public async Task<bool> TryBeginProcessingAsync(EventEnvelope envelope, CancellationToken cancellationToken)
@@ -242,7 +247,7 @@ public sealed class EfCoreIntegrationInbox<TContext>(
 
     private string GetConsumerName()
     {
-        return options.Value.QueueName ?? options.Value.SubscriptionName ?? "unknown-consumer";
+        return options.Value.ConsumerName;
     }
 }
 

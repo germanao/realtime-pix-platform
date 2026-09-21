@@ -81,7 +81,7 @@ public sealed class SagaMessagePublisher(
             causationId: transition.TransitionId,
             cancellationToken: cancellationToken);
 
-    public Task PublishLegacyRequestedAsync(
+    public Task PublishRequestedAsync(
         TransferSaga saga,
         SagaTransition transition,
         CancellationToken cancellationToken) =>
@@ -137,18 +137,6 @@ public sealed class SagaMessagePublisher(
             saga,
             transition,
             cancellationToken);
-        await PublishEventAsync(
-            EventTypes.PixTransferCompleted,
-            1,
-            new PixTransferCompletedPayload(
-                saga.TransferId,
-                saga.SenderUserId,
-                saga.RecipientUserId,
-                saga.Amount.Value,
-                completedAt),
-            saga,
-            transition,
-            cancellationToken);
     }
 
     public async Task PublishFailedAsync(
@@ -169,19 +157,6 @@ public sealed class SagaMessagePublisher(
                 saga.Amount.Value,
                 reason,
                 requiresManualIntervention,
-                failedAt),
-            saga,
-            transition,
-            cancellationToken);
-        await PublishEventAsync(
-            EventTypes.PixTransferFailed,
-            1,
-            new PixTransferFailedPayload(
-                saga.TransferId,
-                saga.SenderUserId,
-                saga.RecipientUserId,
-                saga.Amount.Value,
-                reason,
                 failedAt),
             saga,
             transition,
