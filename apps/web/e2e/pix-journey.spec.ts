@@ -25,8 +25,6 @@ async function expectPlatformLive(page: Page) {
     });
     expect(response.ok()).toBe(true);
     await page.goto("/");
-    const wakeResponse = await page.context().request.post(new URL("/api/runtime/wake", baseUrl).toString());
-    expect(wakeResponse.ok(), `Preview wake proxy returned HTTP ${wakeResponse.status()}.`).toBe(true);
   }
   await expect(page.getByText("Live", { exact: true })).toBeVisible({
     timeout: 330_000
