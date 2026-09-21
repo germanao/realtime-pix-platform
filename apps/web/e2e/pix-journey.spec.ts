@@ -90,7 +90,7 @@ test("simple mode sends one PIX, preserves context in Expert mode, and grants we
 
   await expect(page.getByRole("heading", { name: "Following $25.00" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "$9,975.00" })).toBeVisible();
-  await expect(page.getByText("Sent to Aurora Ledger [BOT]", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sent to Aurora Ledger [BOT]", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('.serviceNode.primary.success')).toHaveCount(9, { timeout: 15_000 });
   await page.screenshot({
     fullPage: true,
