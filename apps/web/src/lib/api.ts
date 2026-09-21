@@ -7,6 +7,7 @@ const defaultProductionRuntime = "https://djb1ah1j5qyrj.cloudfront.net";
 const configuredRuntime = process.env.NEXT_PUBLIC_AWS_RUNTIME_URL?.trim().replace(/\/$/, "");
 const awsRuntimeBase = configuredRuntime ||
   (process.env.NODE_ENV === "production" ? defaultProductionRuntime : undefined);
+const wakeEndpoint = "/api/runtime/wake";
 // A page's HTTP requests and hub must stay on the same runtime. Never change it on a TTL.
 let selectedBase: string | undefined;
 let preparation: Promise<void> | undefined;
@@ -26,7 +27,9 @@ export function prepareRuntime(signal: AbortSignal, status: (message: string) =>
       status("Starting AWS demo…");
       try {
         // This control-plane endpoint works even when the application VM is stopped.
-        await retryStartup(() => requestJson(`${awsRuntimeBase}/runtime/wake`, {
+        // Use the same-origin proxy so protected Vercel previews never need broad CORS on the
+        // public wake controller. The subsequent health check still verifies the real runtime.
+        await retryStartup(() => requestJson(wakeEndpoint, {
           method: "POST", signal
         }), signal, 20_000);
         await retryStartup(() => requestJson(`${awsRuntimeBase}/health/ready`, { signal }), signal, 120_000);
@@ -65,7 +68,7 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export async function keepRuntimeAwake(signal: AbortSignal) {
   if (selectedBase === awsRuntimeBase && awsRuntimeBase) {
-    await requestJson(`${awsRuntimeBase}/runtime/wake`, { method: "POST", signal });
+    await requestJson(wakeEndpoint, { method: "POST", signal });
   }
 }
 

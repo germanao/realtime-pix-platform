@@ -62,7 +62,7 @@ describe("runtime selection", () => {
     expect(await runtime.resolveEventsHubUrl()).toBe("https://aws.example/events/hub");
     await runtime.api("/presence/users");
     const urls = vi.mocked(fetch).mock.calls.map(([url]) => url);
-    expect(urls).toEqual(["https://aws.example/runtime/wake", "https://aws.example/health/ready", "https://aws.example/presence/users"]);
+    expect(urls).toEqual(["/api/runtime/wake", "https://aws.example/health/ready", "https://aws.example/presence/users"]);
   });
 
   it("reports the daily limit without contacting a fallback runtime", async () => {
