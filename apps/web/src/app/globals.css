@@ -1393,6 +1393,11 @@ p {
 }
 
 @media (max-width: 760px) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+
   .appHeader {
     align-items: stretch;
     display: grid;
