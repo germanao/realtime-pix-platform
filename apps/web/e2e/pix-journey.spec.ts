@@ -206,8 +206,25 @@ test("mobile mode uses the vertical journey without horizontal overflow", async 
 
   const dimensions = await page.evaluate(() => ({
     viewport: window.innerWidth,
-    document: document.documentElement.scrollWidth
+    document: document.documentElement.scrollWidth,
+    offenders: Array.from(document.querySelectorAll<HTMLElement>("body *"))
+      .map((element) => {
+        const box = element.getBoundingClientRect();
+        return {
+          element: `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}${
+            element.className && typeof element.className === "string"
+              ? `.${element.className.trim().replace(/\s+/g, ".")}`
+              : ""
+          }`,
+          left: Math.round(box.left),
+          right: Math.round(box.right),
+          width: Math.round(box.width)
+        };
+      })
+      .filter(({ left, right }) => left < -1 || right > window.innerWidth + 1)
+      .slice(0, 12)
   }));
+  console.log("Mobile overflow diagnostics:", JSON.stringify(dimensions));
   expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
 });
 
