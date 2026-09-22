@@ -206,10 +206,9 @@ test("mobile mode uses the vertical journey without horizontal overflow", async 
   await expect(page.locator(".mobileJourney")).toBeVisible();
   await expect(page.locator(".mapCanvas")).toBeHidden();
 
-  const dimensions = await page.evaluate(() => ({
-    viewport: window.innerWidth,
-    document: document.documentElement.scrollWidth,
-    offenders: Array.from(document.querySelectorAll<HTMLElement>("body *"))
+  const dimensions = await page.evaluate(() => {
+    const recipientRail = document.querySelector<HTMLElement>(".recipientRail");
+    const offenders = Array.from(document.querySelectorAll<HTMLElement>("body *"))
       .map((element) => {
         const box = element.getBoundingClientRect();
         return {
@@ -224,11 +223,21 @@ test("mobile mode uses the vertical journey without horizontal overflow", async 
         };
       })
       .filter(({ left, right }) => left < -1 || right > window.innerWidth + 1)
-      .slice(0, 12)
-  }));
-  expect(dimensions.document, JSON.stringify(dimensions.offenders)).toBeLessThanOrEqual(
-    dimensions.viewport
-  );
+      .slice(0, 12);
+    window.scrollTo({ left: document.documentElement.scrollWidth, top: 0 });
+    const pageScrollX = window.scrollX;
+    window.scrollTo({ left: 0, top: 0 });
+    return {
+      viewport: window.innerWidth,
+      document: document.documentElement.scrollWidth,
+      pageScrollX,
+      recipientRail: recipientRail
+        ? { clientWidth: recipientRail.clientWidth, scrollWidth: recipientRail.scrollWidth }
+        : null,
+      offenders
+    };
+  });
+  expect(dimensions.pageScrollX, JSON.stringify(dimensions)).toBe(0);
 });
 
 test("presence appears and disappears across two browser sessions", async ({ browser }) => {
