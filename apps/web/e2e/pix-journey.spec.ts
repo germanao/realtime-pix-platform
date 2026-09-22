@@ -64,7 +64,13 @@ test("simple mode sends one PIX, preserves context in Expert mode, and grants we
   const notFoundResponses: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") {
-      consoleErrors.push(`${message.text()} @ ${message.location().url}`);
+      const location = message.location().url;
+      // Vercel's protected-preview toolbar can probe its own authentication endpoint
+      // after the bypass cookie has already admitted the page. Its provider-owned 403
+      // must not hide application console errors or fail an otherwise valid PIX flow.
+      if (!location.startsWith("https://vercel.com/")) {
+        consoleErrors.push(`${message.text()} @ ${location}`);
+      }
     }
   });
   page.on("response", (response) => {
