@@ -39,7 +39,7 @@ export function prepareRuntime(signal: AbortSignal, status: (message: string) =>
       } catch (error) {
         signal.throwIfAborted();
         if (error instanceof HttpError && error.status === 409) {
-          throw new HttpError("Today's six-hour demo allowance is used. Please return after 00:00 UTC.", 409);
+          throw new HttpError("Today's 24-hour demo allowance is used. Please return after 00:00 UTC.", 409);
         }
         throw error;
       }

@@ -71,7 +71,7 @@ describe("runtime selection", () => {
       url.endsWith("/runtime/wake") ? new Response("{}", { status: 409 }) : jsonResponse({ status: "ready" })
     )));
     const runtime = await import("./api");
-    await expect(runtime.prepareRuntime(new AbortController().signal, vi.fn())).rejects.toThrow("six-hour demo allowance");
+    await expect(runtime.prepareRuntime(new AbortController().signal, vi.fn())).rejects.toThrow("24-hour demo allowance");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 

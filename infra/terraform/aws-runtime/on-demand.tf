@@ -55,7 +55,7 @@ resource "aws_lambda_function" "controller" {
       INSTANCE_ID   = aws_instance.runtime.id
       STATE_TABLE   = aws_dynamodb_table.runtime_state.name
       ORIGIN_SECRET = random_password.origin_header.result
-      DAILY_SECONDS = "21600"
+      DAILY_SECONDS = "86400"
       IDLE_SECONDS  = "1200"
     }
   }
