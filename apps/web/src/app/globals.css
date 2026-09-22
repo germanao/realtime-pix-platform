@@ -1436,7 +1436,11 @@ p {
   }
 
   .recipientRail {
-    grid-auto-columns: 128px;
+    display: flex;
+  }
+
+  .recipientChoice {
+    flex: 0 0 128px;
   }
 
   .amountOptions {
