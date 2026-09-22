@@ -79,7 +79,9 @@ test("simple mode sends one PIX, preserves context in Expert mode, and grants we
       // Vercel's protected-preview toolbar can probe its own authentication endpoint
       // after the bypass cookie has already admitted the page. Its provider-owned 403
       // must not hide application console errors or fail an otherwise valid PIX flow.
-      if (!location.startsWith("https://vercel.com/")) {
+      const providerOwnedError =
+        location.startsWith("https://vercel.com/") || location.includes(".ingest.sentry.io/");
+      if (!providerOwnedError) {
         consoleErrors.push(`${message.text()} @ ${location}`);
       }
     }
