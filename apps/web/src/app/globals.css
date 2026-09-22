@@ -289,6 +289,7 @@ p {
 .composerSection {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .composerHeading {
@@ -324,9 +325,12 @@ p {
   gap: 10px;
   grid-auto-columns: minmax(132px, 1fr);
   grid-auto-flow: column;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   padding: 4px;
   scrollbar-width: thin;
+  width: 100%;
 }
 
 .recipientChoice {

@@ -224,8 +224,9 @@ test("mobile mode uses the vertical journey without horizontal overflow", async 
       .filter(({ left, right }) => left < -1 || right > window.innerWidth + 1)
       .slice(0, 12)
   }));
-  console.log("Mobile overflow diagnostics:", JSON.stringify(dimensions));
-  expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
+  expect(dimensions.document, JSON.stringify(dimensions.offenders)).toBeLessThanOrEqual(
+    dimensions.viewport
+  );
 });
 
 test("presence appears and disappears across two browser sessions", async ({ browser }) => {
