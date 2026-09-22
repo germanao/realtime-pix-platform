@@ -282,6 +282,7 @@ p {
   box-shadow: var(--shadow);
   display: grid;
   gap: 30px;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   padding: 28px;
 }
