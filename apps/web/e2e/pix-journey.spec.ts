@@ -13,6 +13,17 @@ const primaryJourneyOrder = [
   "browser-end"
 ] as const;
 
+test.beforeEach(async ({ context }) => {
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL;
+  if (baseUrl?.endsWith(".vercel.app")) {
+    await context.route(`${baseUrl}/**`, async (route) => {
+      await route.continue({
+        headers: { ...route.request().headers(), "x-vercel-skip-toolbar": "1" }
+      });
+    });
+  }
+});
+
 async function expectPlatformLive(page: Page) {
   const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   const baseUrl = process.env.PLAYWRIGHT_BASE_URL;
