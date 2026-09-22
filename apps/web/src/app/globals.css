@@ -115,15 +115,18 @@ p {
 
 .identityDetail {
   gap: 8px;
+  min-width: 0;
 }
 
 .identityDetail span {
   display: grid;
   gap: 1px;
+  min-width: 0;
 }
 
 .identityDetail strong {
   font-size: 0.88rem;
+  overflow-wrap: anywhere;
 }
 
 .balanceIdentity {
@@ -1395,8 +1398,9 @@ p {
   .headerIdentity {
     display: grid;
     gap: 10px;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     justify-content: stretch;
+    min-width: 0;
   }
 
   .balanceIdentity {
