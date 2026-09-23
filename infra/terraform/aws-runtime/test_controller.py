@@ -21,14 +21,14 @@ class ControllerTests(unittest.TestCase):
         self.assertIsNone(action)
 
     def test_budget_cannot_be_bypassed_by_wake_or_restart(self):
-        state = {"day": 0, "used": 21590, "metered": 1000, "active": True, "activity": 1000}
+        state = {"day": 0, "used": 86390, "metered": 1000, "active": True, "activity": 1000}
         state, action, status = decide(state, 1030, "running", 1000, True)
         self.assertEqual((action, status), ("stop", "daily-limit"))
         _, action, status = decide(state, 1060, "stopped", 1000, True)
         self.assertEqual((action, status), (None, "daily-limit"))
 
     def test_midnight_only_charges_new_day_seconds(self):
-        state = {"day": 0, "used": 21000, "metered": 86390, "active": True, "activity": 86390}
+        state = {"day": 0, "used": 86000, "metered": 86390, "active": True, "activity": 86390}
         state, action, _ = decide(state, 86410, "running", 86300, True)
         self.assertEqual(state["used"], 10)
         self.assertIsNone(action)

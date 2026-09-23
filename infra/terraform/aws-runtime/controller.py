@@ -11,7 +11,7 @@ import time
 import uuid
 
 
-def decide(state, now, instance_state, launched_at, wake, daily_seconds=21600, idle_seconds=1200):
+def decide(state, now, instance_state, launched_at, wake, daily_seconds=86400, idle_seconds=1200):
     state = dict(state)
     day = now // 86400
     used = int(state.get("used", 0)) if state.get("day") == day else 0
@@ -80,7 +80,7 @@ def handler(event, context):
         instance = ec2.describe_instances(InstanceIds=[instance_id])["Reservations"][0]["Instances"][0]
         state, action, status = decide(json.loads(locked.get("payload", "{}")), now,
             instance["State"]["Name"], int(instance["LaunchTime"].timestamp()), wake,
-            int(os.environ.get("DAILY_SECONDS", "21600")), int(os.environ.get("IDLE_SECONDS", "1200")))
+            int(os.environ.get("DAILY_SECONDS", "86400")), int(os.environ.get("IDLE_SECONDS", "1200")))
         # Persist accounting BEFORE EC2 actions; a crash cannot erase charged runtime.
         table.update_item(Key=key, UpdateExpression="SET payload = :payload",
             ConditionExpression="lockToken = :token",

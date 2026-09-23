@@ -23,7 +23,7 @@ No Azure credentials or resources are required.
 ## Operational guardrails
 
 - The browser wake endpoint starts only the existing instance.
-- The controller enforces an aggregate six-hour daily allowance and stops the host after 20 idle minutes.
+- The controller permits up to 24 aggregate runtime hours per UTC day and stops the host after 20 idle minutes.
 - Database ports are private to Docker networking.
 - Runtime secrets stay in SSM and are never embedded in the frontend or repository.
 - Production images are pinned to a commit tag; `aws-latest` is a convenience tag, not the deployment source of truth.
